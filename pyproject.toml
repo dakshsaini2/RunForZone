@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bgmi-zone-predictor"
+version = "1.0.0"
+description = "BGMI Offline Multi-Stage Zone Predictor Engine for Esports Tactical Analytics"
+authors = [{ name = "Esports Analytics Engineering" }]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=2.0.0",
+    "opencv-python>=4.8.0",
+    "pandas>=2.0.0",
+    "xgboost>=2.0.0",
+    "scikit-learn>=1.3.0",
+    "matplotlib>=3.8.0",
+    "streamlit>=1.35.0"
+]
+
+[project.scripts]
+zone-predictor = "zone_predictor.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

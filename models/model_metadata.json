@@ -1,0 +1,104 @@
+{
+  "engine_version": "1.0.0",
+  "units_per_meter": 100.0,
+  "feature_columns": [
+    "curr_x",
+    "curr_y",
+    "curr_r",
+    "next_r",
+    "max_shift_allowed",
+    "dist_to_map_center",
+    "angle_to_map_center_deg",
+    "norm_dist_to_map_center",
+    "dist_to_flight",
+    "flight_side_sign",
+    "flight_angle_deg",
+    "flight_angle_sin",
+    "flight_angle_cos",
+    "relative_flight_angle",
+    "prev_delta_x",
+    "prev_delta_y",
+    "prev_shift_dist",
+    "prev_shift_angle",
+    "prev_shift_angle_sin",
+    "prev_shift_angle_cos",
+    "prev_relative_flight_angle"
+  ],
+  "model_hyperparameters": {
+    "n_estimators": 300,
+    "learning_rate": 0.03,
+    "max_depth": 6,
+    "subsample": 0.85,
+    "colsample_bytree": 0.85
+  },
+  "phase_transitions": {
+    "phase_1_to_2": {
+      "phase": 1,
+      "samples": 100,
+      "metrics": {
+        "oof_distance_mae_meters": 197.06633459008987,
+        "oof_distance_rmse_meters": 233.32022906545558,
+        "oof_angle_mae_deg": 68.09659941284046,
+        "oof_euclidean_mae_meters": 531.9682652134089,
+        "oof_euclidean_p90_meters": 833.4278872028015
+      },
+      "artifacts": {
+        "dist_model": "xgb_phase_1_dist.json",
+        "angle_model": "xgb_phase_1_angle.json",
+        "dx_model": "xgb_phase_1_dx.json",
+        "dy_model": "xgb_phase_1_dy.json"
+      }
+    },
+    "phase_2_to_3": {
+      "phase": 2,
+      "samples": 100,
+      "metrics": {
+        "oof_distance_mae_meters": 88.19762311143754,
+        "oof_distance_rmse_meters": 103.27528169693534,
+        "oof_angle_mae_deg": 88.64971949924998,
+        "oof_euclidean_mae_meters": 322.8541035039485,
+        "oof_euclidean_p90_meters": 529.8577717347549
+      },
+      "artifacts": {
+        "dist_model": "xgb_phase_2_dist.json",
+        "angle_model": "xgb_phase_2_angle.json",
+        "dx_model": "xgb_phase_2_dx.json",
+        "dy_model": "xgb_phase_2_dy.json"
+      }
+    },
+    "phase_3_to_4": {
+      "phase": 3,
+      "samples": 100,
+      "metrics": {
+        "oof_distance_mae_meters": 67.53941820537523,
+        "oof_distance_rmse_meters": 80.25357400503862,
+        "oof_angle_mae_deg": 78.47994475404981,
+        "oof_euclidean_mae_meters": 218.1035612984414,
+        "oof_euclidean_p90_meters": 379.1629227854297
+      },
+      "artifacts": {
+        "dist_model": "xgb_phase_3_dist.json",
+        "angle_model": "xgb_phase_3_angle.json",
+        "dx_model": "xgb_phase_3_dx.json",
+        "dy_model": "xgb_phase_3_dy.json"
+      }
+    },
+    "phase_4_to_5": {
+      "phase": 4,
+      "samples": 100,
+      "metrics": {
+        "oof_distance_mae_meters": 37.9778915704819,
+        "oof_distance_rmse_meters": 45.01687853842944,
+        "oof_angle_mae_deg": 78.91191286886729,
+        "oof_euclidean_mae_meters": 116.41384869787342,
+        "oof_euclidean_p90_meters": 193.984469660071
+      },
+      "artifacts": {
+        "dist_model": "xgb_phase_4_dist.json",
+        "angle_model": "xgb_phase_4_angle.json",
+        "dx_model": "xgb_phase_4_dx.json",
+        "dy_model": "xgb_phase_4_dy.json"
+      }
+    }
+  }
+}
