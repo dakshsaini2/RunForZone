@@ -1,0 +1,236 @@
+/* ==========================================================================
+   RunForZone — Apex Esports Tactical Design System
+   Aesthetic: Studio Broadcaster & High-Performance Tactical Aviation
+   Notice: Strictly NO generic AI dark-mode cliches (no neon purple/cyan glows).
+   ========================================================================== */
+
+:root {
+  /* Studio Light Theme (Default) */
+  --bg-app: #f4f6f9;
+  --bg-surface: #ffffff;
+  --bg-surface-subtle: #f8fafc;
+  --bg-surface-elevated: #ffffff;
+  --bg-input: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-active: #e2e8f0;
+
+  /* Crisp Typography */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+
+  /* Hairline Borders & Shadows */
+  --border-subtle: #e2e8f0;
+  --border-medium: #cbd5e1;
+  --border-focus: #2563eb;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.03);
+  --shadow-lg: 0 12px 28px -6px rgba(15, 23, 42, 0.08), 0 4px 10px -4px rgba(15, 23, 42, 0.04);
+
+  /* Tactical Functional Colors (High-Legibility Studio) */
+  --color-flight: #d97706;        /* Aviation Amber */
+  --color-flight-light: #fef3c7;
+  --color-phase1: #2563eb;        /* Tactical Cobalt */
+  --color-phase2: #059669;        /* Forest Emerald */
+  --color-phase3: #d97706;        /* Tactical Amber */
+  --color-phase4: #dc2626;        /* Urgent Crimson */
+  --color-phase5: #7c3aed;        /* Royal Violet */
+
+  --color-success: #059669;
+  --color-success-bg: #ecfdf5;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --color-info: #0284c7;
+  --color-info-bg: #f0f9ff;
+
+  /* Fonts */
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+}
+
+/* Tactical Graphite Theme (Clean low-light coaching studio — NOT AI neon) */
+[data-theme="tactical-slate"] {
+  --bg-app: #12161f;
+  --bg-surface: #1a202c;
+  --bg-surface-subtle: #151a24;
+  --bg-surface-elevated: #222a3a;
+  --bg-input: #151a24;
+  --bg-hover: #263042;
+  --bg-active: #313d54;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
+
+  --border-subtle: #293447;
+  --border-medium: #3b4961;
+  --border-focus: #3b82f6;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 28px -6px rgba(0, 0, 0, 0.4);
+
+  --color-flight-light: rgba(217, 119, 6, 0.15);
+  --color-success-bg: rgba(5, 150, 105, 0.15);
+  --color-warning-bg: rgba(217, 119, 6, 0.15);
+  --color-danger-bg: rgba(220, 38, 38, 0.15);
+  --color-info-bg: rgba(2, 132, 199, 0.15);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Monospace Utilities */
+.mono {
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+/* Base Buttons */
+button {
+  font-family: var(--font-sans);
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+button:focus-visible {
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+/* Tactical Form Controls */
+input[type="number"],
+input[type="text"],
+select {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="number"]:focus,
+input[type="text"]:focus,
+select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+}
+
+/* Sliders */
+input[type="range"] {
+  accent-color: var(--color-phase1);
+  cursor: pointer;
+}
+
+/* Card Styling */
+.tactical-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.tactical-card:hover {
+  border-color: var(--border-medium);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.badge-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+.badge-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.badge-danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+.badge-info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+.badge-neutral {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.4; }
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: pulseGlow 2s infinite ease-in-out;
+}
