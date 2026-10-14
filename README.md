@@ -1,4 +1,4 @@
-# BGMI Offline Multi-Stage Zone Predictor Engine
+# BGMI Offline Multi-Stage Zone Predictor Engine For Analysis
 
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Machine Learning](https://img.shields.io/badge/ML-XGBoost%20v2.0-orange.svg)](https://xgboost.readthedocs.io/)
