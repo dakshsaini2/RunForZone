@@ -3,11 +3,7 @@ import {
   Plane, 
   CircleDot, 
   Sliders, 
-  Layers, 
-  Sparkles, 
-  ShieldAlert, 
-  Compass,
-  ArrowRight
+  Layers 
 } from 'lucide-react';
 import { toCompassBearing } from '../utils/engine';
 
@@ -20,8 +16,6 @@ export default function FlightControlPanel({
   setShowHeatmap,
   showGrid,
   setShowGrid,
-  showFlightCorridor,
-  setShowFlightCorridor,
   showShiftVectors,
   setShowShiftVectors,
   enforceTerrain,
@@ -38,129 +32,105 @@ export default function FlightControlPanel({
     <div className="control-panel tactical-card">
       <div className="panel-header">
         <div className="panel-title">
-          <Sliders size={15} className="panel-title-icon" />
-          <span>Zone & Flight Settings</span>
+          <Sliders size={14} className="panel-title-icon" />
+          <span>Match Parameters</span>
         </div>
       </div>
 
       <div className="panel-body">
-        {/* SECTION 1: Flight Path */}
-        <div className="parameter-section">
-          <div className="section-title-row">
+        {/* Section 1: Flight Trajectory */}
+        <div className="control-section">
+          <div className="section-header">
             <span className="section-title">
-              <Plane size={14} />
-              <span>Flight Path</span>
+              <Plane size={13} />
+              <span>Plane Flight Path</span>
             </span>
-            <span className="section-badge mono">
+            <span className="meta-badge mono">
               {Math.round(flightAngle)}° ({toCompassBearing(flightAngle)}) • {flightDistKm} km
             </span>
           </div>
 
-          <div className="input-grid">
-            <div className="input-field">
-              <label>Origin X (m)</label>
+          <div className="coords-grid">
+            <div className="coord-field">
+              <label>Start X (m)</label>
               <input
                 type="number"
                 min="0"
                 max="8000"
-                step="100"
+                step="50"
                 value={flightStart.x}
-                onChange={(e) => onFlightChange({
-                  start: { ...flightStart, x: Number(e.target.value) },
-                  end: flightEnd
-                })}
+                onChange={(e) => onFlightChange({ start: { ...flightStart, x: Number(e.target.value) }, end: flightEnd })}
               />
             </div>
-            <div className="input-field">
-              <label>Origin Y (m)</label>
+            <div className="coord-field">
+              <label>Start Y (m)</label>
               <input
                 type="number"
                 min="0"
                 max="8000"
-                step="100"
+                step="50"
                 value={flightStart.y}
-                onChange={(e) => onFlightChange({
-                  start: { ...flightStart, y: Number(e.target.value) },
-                  end: flightEnd
-                })}
+                onChange={(e) => onFlightChange({ start: { ...flightStart, y: Number(e.target.value) }, end: flightEnd })}
               />
             </div>
-            <div className="input-field">
-              <label>Drop End X (m)</label>
+            <div className="coord-field">
+              <label>End X (m)</label>
               <input
                 type="number"
                 min="0"
                 max="8000"
-                step="100"
+                step="50"
                 value={flightEnd.x}
-                onChange={(e) => onFlightChange({
-                  start: flightStart,
-                  end: { ...flightEnd, x: Number(e.target.value) }
-                })}
+                onChange={(e) => onFlightChange({ start: flightStart, end: { ...flightEnd, x: Number(e.target.value) } })}
               />
             </div>
-            <div className="input-field">
-              <label>Drop End Y (m)</label>
+            <div className="coord-field">
+              <label>End Y (m)</label>
               <input
                 type="number"
                 min="0"
                 max="8000"
-                step="100"
+                step="50"
                 value={flightEnd.y}
-                onChange={(e) => onFlightChange({
-                  start: flightStart,
-                  end: { ...flightEnd, y: Number(e.target.value) }
-                })}
+                onChange={(e) => onFlightChange({ start: flightStart, end: { ...flightEnd, y: Number(e.target.value) } })}
               />
             </div>
           </div>
 
-          {/* Quick Route Shortcuts */}
-          <div className="quick-buttons-row">
+          <div className="quick-routes-row">
             <button
-              className="quick-route-btn"
-              onClick={() => onFlightChange({
-                start: { x: 4000, y: 800 },
-                end: { x: 4000, y: 7200 }
-              })}
+              className="route-btn"
+              onClick={() => onFlightChange({ start: { x: 4000, y: 800 }, end: { x: 4000, y: 7200 } })}
             >
               N ➔ S Central
             </button>
             <button
-              className="quick-route-btn"
-              onClick={() => onFlightChange({
-                start: { x: 800, y: 4000 },
-                end: { x: 7200, y: 4000 }
-              })}
+              className="route-btn"
+              onClick={() => onFlightChange({ start: { x: 800, y: 4000 }, end: { x: 7200, y: 4000 } })}
             >
               W ➔ E Horizon
             </button>
             <button
-              className="quick-route-btn"
-              onClick={() => onFlightChange({
-                start: { x: 1200, y: 1500 },
-                end: { x: 6800, y: 6800 }
-              })}
+              className="route-btn"
+              onClick={() => onFlightChange({ start: { x: 1500, y: 1800 }, end: { x: 6600, y: 6200 } })}
             >
-              MilBase Diagonal
+              Diagonal
             </button>
           </div>
         </div>
 
-        {/* SECTION 2: Stage 1 Circle */}
-        <div className="parameter-section">
-          <div className="section-title-row">
+        {/* Section 2: Stage 1 Safe Zone */}
+        <div className="control-section">
+          <div className="section-header">
             <span className="section-title">
-              <CircleDot size={14} />
+              <CircleDot size={13} />
               <span>Stage 1 Safe Zone</span>
             </span>
-            <span className="section-badge mono">
-              Radius: {phase1Radius}m
-            </span>
+            <span className="meta-badge mono">{phase1Radius}m radius</span>
           </div>
 
-          <div className="input-grid">
-            <div className="input-field">
+          <div className="coords-grid">
+            <div className="coord-field">
               <label>Center X (m)</label>
               <input
                 type="number"
@@ -171,7 +141,7 @@ export default function FlightControlPanel({
                 onChange={(e) => onPhase1Change(Number(e.target.value), phase1Center.y, phase1Radius)}
               />
             </div>
-            <div className="input-field">
+            <div className="coord-field">
               <label>Center Y (m)</label>
               <input
                 type="number"
@@ -184,14 +154,14 @@ export default function FlightControlPanel({
             </div>
           </div>
 
-          <div className="slider-row">
-            <div className="slider-header">
-              <span>Phase 1 Radius</span>
-              <span className="mono">{phase1Radius}m (Diameter: {(phase1Radius * 2) / 1000}km)</span>
+          <div className="slider-box">
+            <div className="slider-meta">
+              <span>Radius Scale</span>
+              <span className="mono">{(phase1Radius * 2 / 1000).toFixed(1)} km diameter</span>
             </div>
             <input
               type="range"
-              min="1500"
+              min="1600"
               max="2400"
               step="50"
               value={phase1Radius}
@@ -200,74 +170,50 @@ export default function FlightControlPanel({
           </div>
         </div>
 
-        {/* SECTION 3: Map Layers */}
-        <div className="parameter-section">
-          <div className="section-title-row">
+        {/* Section 3: Map Overlays */}
+        <div className="control-section">
+          <div className="section-header">
             <span className="section-title">
-              <Layers size={14} />
-              <span>Map Layers</span>
+              <Layers size={13} />
+              <span>Display Layers</span>
             </span>
           </div>
 
           <div className="toggles-grid">
-            <label className="toggle-item">
+            <label className="toggle-row">
               <input
                 type="checkbox"
                 checked={showHeatmap}
                 onChange={(e) => setShowHeatmap(e.target.checked)}
               />
-              <span className="toggle-label">
-                <b>Shift Heatmap</b>
-                <small>Highlight likely shift areas</small>
-              </span>
+              <span>Shift Heatmap</span>
             </label>
 
-            <label className="toggle-item">
-              <input
-                type="checkbox"
-                checked={showGrid}
-                onChange={(e) => setShowGrid(e.target.checked)}
-              />
-              <span className="toggle-label">
-                <b>Map Grid (A1-H8)</b>
-                <small>1km coordinate grid</small>
-              </span>
-            </label>
-
-            <label className="toggle-item">
+            <label className="toggle-row">
               <input
                 type="checkbox"
                 checked={showShiftVectors}
                 onChange={(e) => setShowShiftVectors(e.target.checked)}
               />
-              <span className="toggle-label">
-                <b>Shift Arrows</b>
-                <small>Direction from Stage 1 to 5</small>
-              </span>
+              <span>Shift Arrows</span>
             </label>
 
-            <label className="toggle-item">
+            <label className="toggle-row">
               <input
                 type="checkbox"
-                checked={showFlightCorridor}
-                onChange={(e) => setShowFlightCorridor(e.target.checked)}
+                checked={showGrid}
+                onChange={(e) => setShowGrid(e.target.checked)}
               />
-              <span className="toggle-label">
-                <b>Flight Drop Reach</b>
-                <small>Glide reach boundary</small>
-              </span>
+              <span>Erangel Grid (A1-H8)</span>
             </label>
 
-            <label className="toggle-item">
+            <label className="toggle-row">
               <input
                 type="checkbox"
                 checked={enforceTerrain}
                 onChange={(e) => setEnforceTerrain(e.target.checked)}
               />
-              <span className="toggle-label">
-                <b>Land Adjustment</b>
-                <small>Avoid placing circles in deep water</small>
-              </span>
+              <span>Terrain Land Lock</span>
             </label>
           </div>
         </div>
@@ -277,51 +223,42 @@ export default function FlightControlPanel({
         .control-panel {
           display: flex;
           flex-direction: column;
+          gap: 16px;
+          padding: 18px;
         }
 
         .panel-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 12px 18px;
-          border-bottom: 1px solid var(--border-subtle);
-          background: var(--bg-surface-subtle);
         }
 
         .panel-title {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 7px;
+          font-size: 13.5px;
           font-weight: 700;
-          font-size: 13px;
           color: var(--text-primary);
         }
 
         .panel-title-icon {
-          color: #2563eb;
+          color: var(--color-flight);
         }
 
         .panel-body {
-          padding: 16px 18px;
           display: flex;
           flex-direction: column;
           gap: 16px;
         }
 
-        .parameter-section {
+        .control-section {
           display: flex;
           flex-direction: column;
           gap: 10px;
-          padding-bottom: 14px;
-          border-bottom: 1px solid var(--border-subtle);
         }
 
-        .parameter-section:last-child {
-          border-bottom: none;
-          padding-bottom: 0;
-        }
-
-        .section-title-row {
+        .section-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -331,115 +268,111 @@ export default function FlightControlPanel({
           display: flex;
           align-items: center;
           gap: 6px;
-          font-size: 12px;
+          font-size: 11.5px;
           font-weight: 700;
           color: var(--text-secondary);
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
         }
 
-        .section-badge {
+        .meta-badge {
           font-size: 11px;
-          color: var(--text-muted);
           font-weight: 600;
+          color: var(--text-muted);
         }
 
-        .input-grid {
+        .coords-grid {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: 1fr 1fr;
           gap: 8px;
         }
 
-        .input-field {
+        .coord-field {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .coord-field label {
+          font-size: 10.5px;
+          color: var(--text-muted);
+          font-weight: 500;
+        }
+
+        .coord-field input {
+          padding: 6px 9px;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--border-medium);
+          background: var(--bg-input);
+          color: var(--text-primary);
+          font-size: 12px;
+          font-family: var(--font-mono);
+        }
+
+        .coord-field input:focus {
+          border-color: var(--border-focus);
+          outline: none;
+        }
+
+        .quick-routes-row {
+          display: flex;
+          gap: 6px;
+        }
+
+        .route-btn {
+          flex: 1;
+          padding: 5px 8px;
+          font-size: 11px;
+          font-weight: 600;
+          border-radius: var(--radius-sm);
+          background: var(--bg-surface-subtle);
+          border: 1px solid var(--border-subtle);
+          color: var(--text-secondary);
+          transition: all 0.15s ease;
+        }
+
+        .route-btn:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
+        }
+
+        .slider-box {
           display: flex;
           flex-direction: column;
           gap: 4px;
         }
 
-        .input-field label {
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--text-muted);
-        }
-
-        .input-field input {
-          width: 100%;
-        }
-
-        .quick-buttons-row {
-          display: flex;
-          gap: 6px;
-          margin-top: 4px;
-        }
-
-        .quick-route-btn {
-          flex: 1;
-          padding: 5px 8px;
-          font-size: 10px;
-          font-weight: 600;
-          background: var(--bg-surface-subtle);
-          color: var(--text-secondary);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-        }
-
-        .quick-route-btn:hover {
-          background: var(--bg-hover);
-          color: var(--text-primary);
-          border-color: var(--border-medium);
-        }
-
-        .slider-row {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          margin-top: 4px;
-        }
-
-        .slider-header {
+        .slider-meta {
           display: flex;
           justify-content: space-between;
           font-size: 11px;
-          font-weight: 600;
           color: var(--text-muted);
         }
 
-        .toggles-grid {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .toggle-item {
-          display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          cursor: pointer;
-          user-select: none;
-          padding: 4px 6px;
-          border-radius: var(--radius-sm);
-          transition: background 0.15s ease;
-        }
-
-        .toggle-item:hover {
-          background: var(--bg-hover);
-        }
-
-        .toggle-item input[type="checkbox"] {
-          margin-top: 3px;
+        .slider-box input[type="range"] {
           accent-color: #2563eb;
           cursor: pointer;
         }
 
-        .toggle-label {
-          display: flex;
-          flex-direction: column;
-          font-size: 12px;
-          color: var(--text-primary);
+        .toggles-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
         }
 
-        .toggle-label small {
-          font-size: 10px;
-          color: var(--text-muted);
-          font-weight: normal;
+        .toggle-row {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          font-size: 11.5px;
+          color: var(--text-primary);
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .toggle-row input {
+          accent-color: #2563eb;
+          cursor: pointer;
         }
       `}</style>
     </div>

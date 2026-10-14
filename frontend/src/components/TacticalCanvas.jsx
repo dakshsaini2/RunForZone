@@ -1,16 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { 
-  ZoomIn, 
-  ZoomOut, 
-  Maximize2, 
-  Move, 
-  MapPin, 
-  Layers, 
-  Compass,
-  Eye,
-  EyeOff,
-  Target
-} from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, MapPin, Target } from 'lucide-react';
 import { 
   MAP_EXTENT_METERS, 
   PHASE_CONFIG, 
@@ -405,7 +394,7 @@ export default function TacticalCanvas({
     const numCells = 8;
     const cellSize = drawSize / numCells;
     ctx.font = '700 11px JetBrains Mono, monospace';
-    ctx.fillStyle = 'var(--text-muted)' || '#64748b';
+    ctx.fillStyle = '#64748b';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 

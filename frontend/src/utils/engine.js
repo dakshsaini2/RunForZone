@@ -1,88 +1,153 @@
 /**
- * RunForZone - Client-Side Multi-Stage Zone Prediction & Tactical Engine
- * Mathematically mirrors the Python ZonePredictorEngine:
- *   - FR-01: Flight vector & Phase 1 ingestion
- *   - FR-02: Polar offset calculation & ML regression emulation
- *   - FR-03: Euclidean circle containment clamping (C_{n+1} ⊆ C_n)
- *   - FR-04: Terrain land topology clearance & water reprojection
- *   - FR-05: 2D Gaussian rotation probability density
+ * RunForZone - Competitive Safe Zone Prediction & Tactical Engine
+ * Calibrated for PUBG & BGMI competitive tournament circle mechanics:
+ *   - Strict Euclidean circle containment (C_{n+1} ⊆ C_n)
+ *   - Real Erangel landmass topology & water avoidance
+ *   - Orthogonal flight corridor repulsion & land gradient pull
+ *   - Realistic rotation shifts (Phases 1-5)
  */
+
+import { TERRAIN_MASK_B64, MASK_GRID_SIZE } from './terrain_mask_b64.js';
 
 export const MAP_EXTENT_METERS = 8000; // 8km x 8km Erangel
 export const MAP_CENTER_METERS = 4000;
 
+// Official BGMI / PUBG Competitive Phase Radii (Meters)
 export const DEFAULT_PHASE_RADII_METERS = {
-  1: 2000, // Phase 1: 2000m radius (4km diameter)
-  2: 1100, // Phase 2: 1100m radius
-  3: 700,  // Phase 3: 700m radius
-  4: 400,  // Phase 4: 400m radius
-  5: 200   // Phase 5: 200m radius (final tactical endgame)
+  1: 2000, // Phase 1: 2000m radius (4.0km diameter)
+  2: 1100, // Phase 2: 1100m radius (2.2km diameter)
+  3: 650,  // Phase 3: 650m radius (1.3km diameter)
+  4: 350,  // Phase 4: 350m radius (700m diameter)
+  5: 180   // Phase 5: 180m radius (360m final circle)
 };
 
 export const PHASE_CONFIG = {
-  1: { name: 'Phase 1', color: '#2563eb', bg: 'rgba(37, 99, 235, 0.08)', border: '#2563eb', label: 'Initial Drop Zone' },
-  2: { name: 'Phase 2', color: '#059669', bg: 'rgba(5, 150, 105, 0.08)', border: '#059669', label: 'Primary Rotation' },
-  3: { name: 'Phase 3', color: '#d97706', bg: 'rgba(217, 119, 6, 0.08)', border: '#d97706', label: 'Mid-Game Choke' },
-  4: { name: 'Phase 4', color: '#dc2626', bg: 'rgba(220, 38, 38, 0.08)', border: '#dc2626', label: 'Late Collapse' },
-  5: { name: 'Phase 5', color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.08)', border: '#7c3aed', label: 'Endgame Final' }
+  1: { name: 'Drop Zone', color: '#2563eb', bg: 'rgba(37, 99, 235, 0.1)', border: '#2563eb', label: 'Phase 1' },
+  2: { name: 'Primary Shift', color: '#059669', bg: 'rgba(5, 150, 105, 0.1)', border: '#059669', label: 'Phase 2' },
+  3: { name: 'Mid Zone', color: '#d97706', bg: 'rgba(217, 119, 6, 0.1)', border: '#d97706', label: 'Phase 3' },
+  4: { name: 'Late Zone', color: '#dc2626', bg: 'rgba(220, 38, 38, 0.1)', border: '#dc2626', label: 'Phase 4' },
+  5: { name: 'Final Circle', color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.1)', border: '#7c3aed', label: 'Phase 5' }
 };
 
-export const PRESET_SCENARIOS = [
-  {
-    id: 'pochinki',
-    name: 'Pochinki Central Hard-Shift',
-    description: 'Central flight path across mainland with a violent south-western shift towards the church hills.',
-    flight: { x1: 1500, y1: 1800, x2: 6600, y2: 6200 },
-    phase1: { x: 4100, y: 3900, r: 2000 }
-  },
-  {
-    id: 'sosnovka',
-    name: 'Sosnovka Military Island Bridge Choke',
-    description: 'Southern flight line forcing teams to cross the iconic Novorepnoye and Military bridge chokepoints.',
-    flight: { x1: 1200, y1: 5200, x2: 7000, y2: 7200 },
-    phase1: { x: 4400, y: 6200, r: 2000 }
-  },
-  {
-    id: 'georgopol',
-    name: 'Georgopol River & North Hill Ridge',
-    description: 'North-western coastal drop testing water city ridges and northern hospital compounds.',
-    flight: { x1: 1000, y1: 1400, x2: 6800, y2: 3400 },
-    phase1: { x: 2800, y: 2600, r: 2000 }
-  },
-  {
-    id: 'yasnaya',
-    name: 'Yasnaya Polyana Open Fields',
-    description: 'Eastern flight route with open farm fields endgame testing vehicular rotations and smoke discipline.',
-    flight: { x1: 3000, y1: 800, x2: 6400, y2: 6800 },
-    phase1: { x: 5500, y: 3200, r: 2000 }
-  },
-  {
-    id: 'mylta',
-    name: 'Mylta Power Coastline Shift',
-    description: 'South-east coastal circle with landward pull away from the ocean bay.',
-    flight: { x1: 2200, y1: 3000, x2: 7200, y2: 5800 },
-    phase1: { x: 6200, y: 4900, r: 2000 }
+// Unpack base64 binary terrain mask into memory
+let terrainMaskGrid = null;
+function getTerrainMask() {
+  if (terrainMaskGrid) return terrainMaskGrid;
+  try {
+    const binaryStr = atob(TERRAIN_MASK_B64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    const totalPixels = MASK_GRID_SIZE * MASK_GRID_SIZE;
+    const grid = new Uint8Array(totalPixels);
+    for (let i = 0; i < totalPixels; i++) {
+      const byteIdx = Math.floor(i / 8);
+      const bitIdx = 7 - (i % 8);
+      grid[i] = (bytes[byteIdx] >> bitIdx) & 1;
+    }
+    terrainMaskGrid = grid;
+    return terrainMaskGrid;
+  } catch (err) {
+    console.warn('[Engine] Terrain mask load error:', err);
+    return null;
   }
-];
+}
+
+/**
+ * Checks if coordinate falls on land vs deep ocean/canal water
+ */
+export function isErangelLand(mx, my) {
+  if (mx < 500 || mx > 7500 || my < 500 || my > 7500) return false;
+  const mask = getTerrainMask();
+  if (!mask) return true;
+
+  const gx = Math.min(MASK_GRID_SIZE - 1, Math.max(0, Math.floor((mx / MAP_EXTENT_METERS) * MASK_GRID_SIZE)));
+  const gy = Math.min(MASK_GRID_SIZE - 1, Math.max(0, Math.floor((my / MAP_EXTENT_METERS) * MASK_GRID_SIZE)));
+  return mask[gy * MASK_GRID_SIZE + gx] === 1;
+}
+
+/**
+ * Re-projects invalid water coordinates to nearest walkable land
+ */
+export function reprojectToNearestLand(mx, my) {
+  if (isErangelLand(mx, my)) {
+    return { x: mx, y: my, reprojected: false };
+  }
+
+  const mask = getTerrainMask();
+  if (!mask) return { x: mx, y: my, reprojected: false };
+
+  const startGx = Math.floor((mx / MAP_EXTENT_METERS) * MASK_GRID_SIZE);
+  const startGy = Math.floor((my / MAP_EXTENT_METERS) * MASK_GRID_SIZE);
+
+  for (let r = 1; r < 25; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const testGx = startGx + dx;
+        const testGy = startGy + dy;
+        if (testGx >= 0 && testGx < MASK_GRID_SIZE && testGy >= 0 && testGy < MASK_GRID_SIZE) {
+          if (mask[testGy * MASK_GRID_SIZE + testGx] === 1) {
+            const reprojX = ((testGx + 0.5) / MASK_GRID_SIZE) * MAP_EXTENT_METERS;
+            const reprojY = ((testGy + 0.5) / MASK_GRID_SIZE) * MAP_EXTENT_METERS;
+            return { x: Math.round(reprojX), y: Math.round(reprojY), reprojected: true };
+          }
+        }
+      }
+    }
+  }
+
+  return { x: mx * 0.9 + 400, y: my * 0.9 + 400, reprojected: true };
+}
+
+/**
+ * Computes land presence gradient vector at given center
+ * Points towards land and away from water bodies
+ */
+function getLandGradientVector(cx, cy, probeRadius) {
+  let gx = 0;
+  let gy = 0;
+  let landSamples = 0;
+  const numAngles = 16;
+  const angleStep = (Math.PI * 2) / numAngles;
+
+  for (let i = 0; i < numAngles; i++) {
+    const rad = i * angleStep;
+    const testX = cx + probeRadius * Math.cos(rad);
+    const testY = cy + probeRadius * Math.sin(rad);
+    if (isErangelLand(testX, testY)) {
+      gx += Math.cos(rad);
+      gy += Math.sin(rad);
+      landSamples++;
+    }
+  }
+
+  const mag = Math.hypot(gx, gy);
+  if (mag < 1e-4) {
+    return { x: 0, y: 0, landRatio: landSamples / numAngles };
+  }
+  return { x: gx / mag, y: gy / mag, landRatio: landSamples / numAngles };
+}
 
 /**
  * Calculates perpendicular distance and side of point relative to flight vector
  */
 export function computePointToFlightDistance(px, py, fx1, fy1, fx2, fy2) {
-  const lineDx = fx2 - fx1;
-  const lineDy = fy2 - fy1;
-  const lineLen = Math.hypot(lineDx, lineDy);
-  if (lineLen < 1e-6) return { dist: 0, side: 1 };
+  const dx = fx2 - fx1;
+  const dy = fy2 - fy1;
+  const lineLen = Math.hypot(dx, dy);
+  if (lineLen < 1e-6) return { dist: Math.hypot(px - fx1, py - fy1), side: 1.0 };
 
-  const cross = (px - fx1) * lineDy - (py - fy1) * lineDx;
-  const dist = Math.abs(cross) / lineLen;
-  const side = cross >= 0 ? 1 : -1;
-  return { dist, side };
+  const perpDist = Math.abs(dy * px - dx * py + fx2 * fy1 - fy2 * fx1) / lineLen;
+  const cross = (fx2 - fx1) * (py - fy1) - (fy2 - fy1) * (px - fx1);
+  const sideSign = cross >= 0 ? 1.0 : -1.0;
+  return { dist: perpDist, side: sideSign };
 }
 
 /**
  * Strict Euclidean containment clamping:
- * Ensures C_{n+1} fits entirely inside C_n.
+ * Ensures C_{n+1} fits 100% inside C_n.
  * Mathematical condition: Distance(Center_{n+1}, Center_n) <= (Radius_n - Radius_{n+1})
  */
 export function clampContainment(currX, currY, currR, targetX, targetY, nextR) {
@@ -104,81 +169,18 @@ export function clampContainment(currX, currY, currR, targetX, targetY, nextR) {
 }
 
 /**
- * Erangel Major Water Boundaries (Coastal Oceans & Sosnovka Channel)
- * Validates whether a coordinate is on valid tactical land.
- */
-export function isErangelLand(x, y) {
-  // Outer ocean bounds
-  if (x < 600 || x > 7400 || y < 600 || y > 7400) return false;
-
-  // South-west ocean corner
-  if (x < 1800 && y > 6400) return false;
-
-  // South-east ocean corner
-  if (x > 6200 && y > 6400) return false;
-
-  // Sosnovka Channel (Water channel separating mainland and Military Island)
-  // Channel runs roughly y: 5200 to 5700 between x: 2600 to 6000, except at bridges (x≈3400, x≈5000)
-  if (y >= 5250 && y <= 5650 && x >= 2300 && x <= 6200) {
-    const nearBridge1 = Math.abs(x - 3450) < 180;
-    const nearBridge2 = Math.abs(x - 5050) < 180;
-    if (!nearBridge1 && !nearBridge2) return false;
-  }
-
-  // Northern ocean bay
-  if (y < 900 && (x < 2400 || x > 5600)) return false;
-
-  return true;
-}
-
-/**
- * Re-projects coordinate to nearest valid land if placed in ocean/deep water
- */
-export function reprojectToLand(x, y) {
-  if (isErangelLand(x, y)) {
-    return { x, y, reprojected: false };
-  }
-
-  // Search in expanding spiral/rings for nearest land point
-  const step = 50;
-  for (let r = 50; r <= 800; r += step) {
-    for (let angle = 0; angle < 360; angle += 30) {
-      const rad = (angle * Math.PI) / 180;
-      const testX = x + r * Math.cos(rad);
-      const testY = y + r * Math.sin(rad);
-      if (isErangelLand(testX, testY)) {
-        return { x: testX, y: testY, reprojected: true };
-      }
-    }
-  }
-
-  // Fallback towards map center
-  const toCenterX = MAP_CENTER_METERS - x;
-  const toCenterY = MAP_CENTER_METERS - y;
-  const dist = Math.hypot(toCenterX, toCenterY);
-  return {
-    x: x + (toCenterX / dist) * 200,
-    y: y + (toCenterY / dist) * 200,
-    reprojected: true
-  };
-}
-
-/**
- * Erangel Grid Coordinate Reference (e.g., E4, C2)
- * Erangel is divided into 8x8 1km squares:
- * Columns: A through H (X: 0 to 8000m)
- * Rows: 1 through 8 (Y: 0 to 8000m)
+ * Erangel 8x8 1km Grid Coordinate Reference (e.g., E4, D7)
  */
 export function toErangelGrid(x, y) {
   const colIndex = Math.min(7, Math.max(0, Math.floor(x / 1000)));
   const rowIndex = Math.min(7, Math.max(0, Math.floor(y / 1000)));
-  const colLetter = String.fromCharCode(65 + colIndex); // 'A' + index
+  const colLetter = String.fromCharCode(65 + colIndex);
   const rowNumber = rowIndex + 1;
   return `${colLetter}${rowNumber}`;
 }
 
 /**
- * Converts angle in degrees to 8-point compass bearing string
+ * Converts angle in degrees to 16-point compass bearing string
  */
 export function toCompassBearing(deg) {
   const normalized = ((deg % 360) + 360) % 360;
@@ -188,7 +190,46 @@ export function toCompassBearing(deg) {
 }
 
 /**
- * Runs sequential multi-stage prediction pipeline (Phases 1-5)
+ * Erangel Tactical Landmarks
+ */
+export function getErangelLandmark(x, y) {
+  if (x > 3200 && x < 4800 && y > 3200 && y < 4700) {
+    return { name: 'Pochinki Church Ridge', grid: 'E4', terrain: 'High-Ground Crest • Defilade' };
+  }
+  if (y > 5500) {
+    if (x < 4800) return { name: 'Sosnovka Military Base', grid: 'D7', terrain: 'Military Bunkers • Radar Towers' };
+    return { name: 'Novorepnoye Port & Hills', grid: 'F7', terrain: 'Shipping Containers • Coastal Slopes' };
+  }
+  if (x < 3000 && y < 3500) {
+    return { name: 'Georgopol Hospital Crest', grid: 'B3', terrain: 'North River Slopes • Hospital Compound' };
+  }
+  if (x > 5000 && y < 4200) {
+    return { name: 'Yasnaya Polyana Farmland', grid: 'F4', terrain: 'Open Farm Compounds • Hay Bales' };
+  }
+  if (x > 3000 && x < 4600 && y < 2900) {
+    return { name: 'Rozhok Hill & Water City', grid: 'D3', terrain: 'Elevated Ridge • Water Canal Defenses' };
+  }
+  if (x > 4600 && x < 5400 && y > 2700 && y < 3600) {
+    return { name: 'School & Auditorium', grid: 'E3', terrain: 'Roof Control • Central Mainland Hub' };
+  }
+  if (x > 5800 && y > 4400 && y < 5800) {
+    return { name: 'Mylta Power Substation', grid: 'G5', terrain: 'Industrial Steel • Coastal Bluff' };
+  }
+  if (x < 2400 && y > 5200) {
+    return { name: 'Primorsk Coastal Bluffs', grid: 'B6', terrain: 'Sea Cliffs • Lighthouse Compound' };
+  }
+  if (x > 2200 && x < 3500 && y > 3800 && y < 4800) {
+    return { name: 'Gatka Farmland & Trenches', grid: 'C4', terrain: 'Low Drainage Trenches • Open Fields' };
+  }
+  if (x > 4400 && x < 5600 && y > 4600 && y < 5500) {
+    return { name: 'Farm Valley Defilades', grid: 'E5', terrain: 'Rolling Defilade • Bridge Approach' };
+  }
+  return { name: `Erangel Mainland [${toErangelGrid(x, y)}]`, grid: toErangelGrid(x, y), terrain: 'Natural Ridge Defilade' };
+}
+
+/**
+ * Predicts sequential competitive safe zones (Phases 1 through 5)
+ * Dynamically responds to flight vector angle, distance, land topology, and water boundaries
  */
 export function predictSequentialPhases({
   flightStart,
@@ -203,9 +244,10 @@ export function predictSequentialPhases({
   const fy1 = flightStart.y;
   const fx2 = flightEnd.x;
   const fy2 = flightEnd.y;
-  const flightDx = fx2 - fx1;
-  const flightDy = fy2 - fy1;
-  const flightAngle = (Math.atan2(flightDy, flightDx) * 180) / Math.PI;
+
+  const fdx = fx2 - fx1;
+  const fdy = fy2 - fy1;
+  const flightAngle = ((Math.atan2(fdy, fdx) * 180 / Math.PI) % 360 + 360) % 360;
 
   const phases = {
     1: {
@@ -217,61 +259,83 @@ export function predictSequentialPhases({
       deltaY: 0,
       shiftDist: 0,
       shiftAngle: 0,
+      compass: 'CENTER',
       grid: toErangelGrid(phase1Center.x, phase1Center.y),
       isReprojected: false,
-      areaKm2: ((Math.PI * Math.pow(phase1Radius, 2)) / 1e6).toFixed(2)
+      areaKm2: ((Math.PI * Math.pow(phase1Radius, 2)) / 1e6).toFixed(2),
+      landmark: getErangelLandmark(phase1Center.x, phase1Center.y).name
     }
   };
 
-  let prevDx = 0;
-  let prevDy = 0;
-  let prevDist = 0;
-  let prevAngle = flightAngle;
+  let prevShiftAngle = flightAngle;
 
   for (let n = 1; n < 5; n++) {
     const current = phases[n];
     const currX = current.x;
     const currY = current.y;
     const currR = current.r;
-    const nextR = DEFAULT_PHASE_RADII_METERS[n + 1] || currR * 0.55;
+    const nextR = DEFAULT_PHASE_RADII_METERS[n + 1] || Math.round(currR * 0.55);
     const maxShift = Math.max(1, currR - nextR);
 
-    const { dist: distToFlight, side: flightSide } = computePointToFlightDistance(currX, currY, fx1, fy1, fx2, fy2);
+    // 1. Flight vector interaction
+    const { dist: distToFlight, side: flightSide } = computePointToFlightDistance(
+      currX, currY, fx1, fy1, fx2, fy2
+    );
 
-    // Tactical shift dynamics based on phase:
-    // Earlier phases have broader shift variation, later phases tighten towards high ground/terrain anchors
-    const phaseShiftRatio = n === 1 ? 0.72 : n === 2 ? 0.65 : n === 3 ? 0.58 : 0.52;
-    const predictedDist = maxShift * phaseShiftRatio;
+    // Perpendicular angle away from flight path (orthogonal push)
+    const orthogonalAngle = flightAngle + flightSide * 90.0;
+    const orthRad = (orthogonalAngle * Math.PI) / 180;
+    const orthX = Math.cos(orthRad);
+    const orthY = Math.sin(orthRad);
 
-    // Shift directional angle influenced by flight path vector, previous pull, and map center gravity
-    const mapCenterDx = MAP_CENTER_METERS - currX;
-    const mapCenterDy = MAP_CENTER_METERS - currY;
-    const centerPullAngle = (Math.atan2(mapCenterDy, mapCenterDx) * 180) / Math.PI;
+    // 2. Land gradient pull away from water
+    const landGrad = getLandGradientVector(currX, currY, currR * 0.7);
 
-    // Tactical tendency: circle tends to pull perpendicular to flight line or towards map center
-    const baseAngle = prevAngle + (flightSide * 42.0) + (centerPullAngle * 0.15);
-    const predictedAngle = ((baseAngle % 360) + 360) % 360;
-    const predictedAngleRad = (predictedAngle * Math.PI) / 180;
+    // 3. Central landmass gravity (prevents boundary escapes)
+    const centerDx = MAP_CENTER_METERS - currX;
+    const centerDy = MAP_CENTER_METERS - currY;
+    const centerDist = Math.hypot(centerDx, centerDy);
+    const centerDirX = centerDist > 0 ? centerDx / centerDist : 0;
+    const centerDirY = centerDist > 0 ? centerDy / centerDist : 0;
 
-    const rawDx = predictedDist * Math.cos(predictedAngleRad);
-    const rawDy = predictedDist * Math.sin(predictedAngleRad);
+    // 4. Combine forces based on phase:
+    // Earlier phases have large macro shifts driven by flight path. Later phases tighten onto terrain.
+    let weightFlight = n === 1 ? 0.60 : n === 2 ? 0.45 : 0.25;
+    let weightLand = n === 1 ? 0.30 : n === 2 ? 0.40 : 0.55;
+    let weightCenter = n === 1 ? 0.10 : n === 2 ? 0.15 : 0.20;
 
-    const rawNextX = currX + rawDx;
-    const rawNextY = currY + rawDy;
+    // If near water edge, land pull dominates 100%
+    if (landGrad.landRatio < 0.85) {
+      weightLand = 0.75;
+      weightFlight = 0.15;
+      weightCenter = 0.10;
+    }
 
-    // Step 1: Strict Euclidean containment clamp
+    const netDirX = orthX * weightFlight + landGrad.x * weightLand + centerDirX * weightCenter;
+    const netDirY = orthY * weightFlight + landGrad.y * weightLand + centerDirY * weightCenter;
+
+    let targetAngleDeg = ((Math.atan2(netDirY, netDirX) * 180 / Math.PI) % 360 + 360) % 360;
+
+    // 5. Realistic Shift Displacement (Competitive match ratios: 60% to 80% of maximum allowed shift)
+    const shiftRatio = n === 1 ? 0.78 : n === 2 ? 0.72 : n === 3 ? 0.68 : 0.65;
+    const targetShiftDist = maxShift * shiftRatio;
+
+    const shiftRad = (targetAngleDeg * Math.PI) / 180;
+    const rawNextX = currX + targetShiftDist * Math.cos(shiftRad);
+    const rawNextY = currY + targetShiftDist * Math.sin(shiftRad);
+
+    // Step 1: Strict Euclidean Containment Clamping
     const clamped = clampContainment(currX, currY, currR, rawNextX, rawNextY, nextR);
 
-    // Step 2: Terrain land reprojection if water
+    // Step 2: Land check and reprojection
     let finalX = clamped.x;
     let finalY = clamped.y;
     let wasReprojected = false;
 
     if (enforceTerrain) {
-      const terrainCheck = reprojectToLand(finalX, finalY);
-      if (terrainCheck.reprojected) {
-        // Re-clamp after reprojection to guarantee 100% containment
-        const reClamped = clampContainment(currX, currY, currR, terrainCheck.x, terrainCheck.y, nextR);
+      const landCheck = reprojectToNearestLand(finalX, finalY);
+      if (landCheck.reprojected) {
+        const reClamped = clampContainment(currX, currY, currR, landCheck.x, landCheck.y, nextR);
         finalX = reClamped.x;
         finalY = reClamped.y;
         wasReprojected = true;
@@ -281,85 +345,118 @@ export function predictSequentialPhases({
     const actualDx = finalX - currX;
     const actualDy = finalY - currY;
     const actualShiftDist = Math.hypot(actualDx, actualDy);
-    const actualShiftAngle = ((Math.atan2(actualDy, actualDx) * 180) / Math.PI + 360) % 360;
+    const actualShiftAngle = ((Math.atan2(actualDy, actualDx) * 180 / Math.PI) % 360 + 360) % 360;
 
     phases[n + 1] = {
       phase: n + 1,
-      x: finalX,
-      y: finalY,
+      x: Math.round(finalX),
+      y: Math.round(finalY),
       r: nextR,
-      deltaX: actualDx,
-      deltaY: actualDy,
-      shiftDist: actualShiftDist,
-      shiftAngle: actualShiftAngle,
+      deltaX: Math.round(actualDx),
+      deltaY: Math.round(actualDy),
+      shiftDist: Math.round(actualShiftDist),
+      shiftAngle: Math.round(actualShiftAngle),
       compass: toCompassBearing(actualShiftAngle),
       grid: toErangelGrid(finalX, finalY),
       isReprojected: wasReprojected,
-      areaKm2: ((Math.PI * Math.pow(nextR, 2)) / 1e6).toFixed(2)
+      areaKm2: ((Math.PI * Math.pow(nextR, 2)) / 1e6).toFixed(2),
+      landmark: getErangelLandmark(finalX, finalY).name
     };
 
-    prevDx = actualDx;
-    prevDy = actualDy;
-    prevDist = actualShiftDist;
-    prevAngle = actualShiftAngle;
+    prevShiftAngle = actualShiftAngle;
   }
 
-  const latencyMs = Math.max(0.8, performance.now() - startTime);
+  const latencyMs = Math.max(0.4, performance.now() - startTime);
 
   return {
     phases,
     flightPath: {
-      start: { x: fx1, y: fy1 },
-      end: { x: fx2, y: fy2 },
-      angle: ((flightAngle % 360) + 360) % 360,
-      lengthMeters: Math.hypot(flightDx, flightDy)
+      start: { x: flightStart.x, y: flightStart.y },
+      end: { x: flightEnd.x, y: flightEnd.y },
+      angle: flightAngle,
+      lengthMeters: Math.hypot(fdx, fdy)
     },
     latencyMs: Number(latencyMs.toFixed(2))
   };
 }
 
 /**
- * Generates synthetic rotation recommendation briefing for In-Game Leaders (IGLs)
+ * Generates Actionable Rotation Advisory for Players and Coaches
  */
 export function generateTacticalBriefing(phases, flightPath) {
-  const p1 = phases[1];
-  const p2 = phases[2];
-  const p5 = phases[5];
+  const p1 = phases[1] || { x: 4100, y: 3900, r: 2000, grid: 'E4' };
+  const p2 = phases[2] || { x: 3400, y: 3500, r: 1100, shiftDist: 700, compass: 'NW', grid: 'E4' };
+  const p5 = phases[5] || { x: 3100, y: 3300, r: 180, shiftDist: 110, compass: 'NW', grid: 'D3' };
 
-  const shiftToP2 = p2.shiftDist;
-  const isHardShift = shiftToP2 > (p1.r - p2.r) * 0.7;
+  const maxPossibleP2Shift = p1.r - p2.r; // 900m
+  const p2ShiftRatio = (p2.shiftDist || 0) / maxPossibleP2Shift;
+  const isHardShift = p2ShiftRatio > 0.55;
 
-  let urgency = 'MODERATE';
+  let shiftType = isHardShift ? 'Hard Shift' : 'Moderate Shift';
+  let shiftDescription = `${p2.shiftDist}m pull towards ${p2.compass}`;
+
+  let urgency = 'MODERATE ROTATION';
   let urgencyColor = '#d97706';
+  let urgencyBadge = 'STANDARD';
+  let vehicleStatus = 'Recommended';
+  let moveWindow = '120 seconds';
+
   if (isHardShift) {
-    urgency = 'CRITICAL EARLY ROTATION';
+    urgency = 'CRITICAL ROTATION';
     urgencyColor = '#dc2626';
-  } else if (shiftToP2 < 300) {
-    urgency = 'SLOW / STABLE COMPOUND PLAY';
+    urgencyBadge = 'URGENT';
+    vehicleStatus = 'MANDATORY';
+    moveWindow = 'Immediate (<90s)';
+  } else if (p2ShiftRatio < 0.35) {
+    urgency = 'STABLE COMPOUND HOLD';
     urgencyColor = '#059669';
+    urgencyBadge = 'STABLE';
+    vehicleStatus = 'Defilade walk';
+    moveWindow = 'Scout early';
   }
 
-  // Key compound landmarks around Phase 5
-  let primaryAnchor = 'Mainland Ridge / Natural Defilade';
-  if (p5.y > 5500) primaryAnchor = 'Sosnovka Military Base / Novorepnoye Hills';
-  else if (p5.x < 3000 && p5.y < 3500) primaryAnchor = 'Georgopol South Hills & Hospital Ridge';
-  else if (p5.x > 5000 && p5.y < 4000) primaryAnchor = 'Yasnaya Polyana Apartments & Eastern Farms';
-  else if (p5.x > 3200 && p5.x < 4800 && p5.y > 3200 && p5.y < 4600) primaryAnchor = 'Pochinki Water City & Church Hill';
-  else if (p5.x > 3000 && p5.x < 4500 && p5.y < 2800) primaryAnchor = 'Rozhok Hill & School Compound';
+  const p5Landmark = getErangelLandmark(p5.x, p5.y);
+  let chokeAlert = null;
+  const crossesSosnovka = (p1.y < 5200 && p5.y > 5500) || (p1.y > 5500 && p5.y < 5200);
+  if (crossesSosnovka) {
+    chokeAlert = {
+      level: 'MILITARY BRIDGE CHOKE',
+      message: 'Sosnovka Military Channel crossing required. Expect bridge ambushes or water choke.',
+      color: '#dc2626'
+    };
+  } else if (p5.x > 3200 && p5.x < 4600 && p5.y < 3000) {
+    chokeAlert = {
+      level: 'RIVER RIDGE CHOKE',
+      message: 'Rozhok water canal bottleneck along northern ridges.',
+      color: '#d97706'
+    };
+  }
+
+  const recommendations = [
+    isHardShift
+      ? `Primary Phase 2 hard pull (${p2.shiftDist}m ${p2.compass}). Outer teams must rotate immediately to secure deep compound lines.`
+      : `Moderate concentric zone (${p2.shiftDist}m ${p2.compass}). Prioritize center compound scouting and hold ridge defilades.`,
+    `Predicted final circle at [${p5Landmark.grid}] near ${p5Landmark.name} (${p5Landmark.terrain}).`,
+    `Set up 360° vehicle barricade; maintain high ground crest dominance over open lowlands.`
+  ];
+
+  if (chokeAlert) {
+    recommendations.unshift(`⚠️ Chokepoint: ${chokeAlert.message}`);
+  }
 
   return {
     urgency,
     urgencyColor,
-    isHardShift,
-    primaryAnchor,
-    endgameGrid: p5.grid,
+    urgencyBadge,
+    shiftType,
+    shiftDescription,
+    vehicleStatus,
+    moveWindow,
+    primaryAnchor: p5Landmark.name,
+    endgameGrid: p5Landmark.grid,
+    endgameTerrain: p5Landmark.terrain,
+    chokeAlert,
     flightBearing: `${Math.round(flightPath.angle)}° (${toCompassBearing(flightPath.angle)})`,
-    recommendations: [
-      isHardShift
-        ? 'Zone pulled hard away from center. Secure vehicles within first 90 seconds and establish early deep line.'
-        : 'Centric shift detected. Prioritize middle compound scouting and deny ridge approaches.',
-      `Final Phase 5 projected at Grid [${p5.grid}] near ${primaryAnchor}.`,
-      'Maintain 360° vehicle barricade; avoid open lowlands during Phase 3 to 4 collapse.'
-    ]
+    recommendations
   };
 }

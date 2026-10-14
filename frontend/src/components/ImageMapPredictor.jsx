@@ -1,21 +1,20 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Upload, 
-  Sparkles, 
   Sliders, 
   Layers, 
   Download, 
   CheckCircle2, 
   Maximize2, 
-  RotateCcw, 
   Eye, 
   Split, 
-  ArrowRight,
   Plane,
   Crosshair,
   FileImage,
-  Flame,
-  ShieldCheck,
+  MapPin,
+  Car,
+  Clock,
+  Compass,
   ZoomIn,
   ZoomOut,
   Target,
@@ -23,21 +22,20 @@ import {
 } from 'lucide-react';
 import { 
   predictSequentialPhases, 
+  generateTacticalBriefing,
   PHASE_CONFIG, 
-  toErangelGrid, 
-  toCompassBearing,
+  getErangelLandmark,
   MAP_EXTENT_METERS 
 } from '../utils/engine';
 import StageMapCanvas from './StageMapCanvas';
+import './ImageMapPredictor.css';
 
 export default function ImageMapPredictor() {
   const [uploadedImageSrc, setUploadedImageSrc] = useState('/samples/match_sample_1.png');
   const [imageName, setImageName] = useState('match_sample_1.png');
-  const [imageDimensions, setImageDimensions] = useState({ width: 1024, height: 1024 });
 
   // Map Background: '8k' (Ultra High-Res 8192x8192) | 'screenshot' (Uploaded Image)
   const [mapBackground, setMapBackground] = useState('8k');
-  const [is8kLoaded, setIs8kLoaded] = useState(false);
 
   // Pan & Zoom viewport state
   const [transform, setTransform] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
@@ -45,15 +43,15 @@ export default function ImageMapPredictor() {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // Calibration state (in meters: 0 to 8000)
-  const [flightStart, setFlightStart] = useState({ x: 1600, y: 1900 });
-  const [flightEnd, setFlightEnd] = useState({ x: 6700, y: 6400 });
+  const [flightStart, setFlightStart] = useState({ x: 1500, y: 1800 });
+  const [flightEnd, setFlightEnd] = useState({ x: 6600, y: 6200 });
   const [phase1Center, setPhase1Center] = useState({ x: 4100, y: 3900 });
   const [phase1Radius, setPhase1Radius] = useState(2000);
 
   // View & Layer options
   const [viewMode, setViewMode] = useState('overlay'); // 'overlay' | 'stages' | 'split'
   const [overlayOpacity, setOverlayOpacity] = useState(0.9);
-  const [selectedStage, setSelectedStage] = useState(null); // null = all stages
+  const [selectedStage, setSelectedStage] = useState(null);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showShiftArrows, setShowShiftArrows] = useState(true);
   const [showFlightLine, setShowFlightLine] = useState(true);
@@ -65,9 +63,19 @@ export default function ImageMapPredictor() {
   const erangelPreviewRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  // Compute multi-stage predictions
+  const prediction = predictSequentialPhases({
+    flightStart,
+    flightEnd,
+    phase1Center,
+    phase1Radius,
+    enforceTerrain: true
+  });
+  const { phases, flightPath } = prediction;
+  const briefing = generateTacticalBriefing(phases, flightPath);
+
   // Preload Erangel 8K map and fast preview
   useEffect(() => {
-    // 1. Fast preview map (6.7 MB)
     const preview = new Image();
     preview.src = '/erangel_map.png';
     preview.onload = () => {
@@ -75,12 +83,10 @@ export default function ImageMapPredictor() {
       renderCanvas();
     };
 
-    // 2. Full Ultra 8K map (8192x8192)
     const full8k = new Image();
     full8k.src = '/erangel_map_8k.png';
     full8k.onload = () => {
       erangel8kRef.current = full8k;
-      setIs8kLoaded(true);
       renderCanvas();
     };
   }, []);
@@ -92,20 +98,9 @@ export default function ImageMapPredictor() {
     img.src = uploadedImageSrc;
     img.onload = () => {
       imageObjRef.current = img;
-      setImageDimensions({ width: img.naturalWidth || 1024, height: img.naturalHeight || 1024 });
       renderCanvas();
     };
   }, [uploadedImageSrc]);
-
-  // Compute multi-stage predictions
-  const prediction = predictSequentialPhases({
-    flightStart,
-    flightEnd,
-    phase1Center,
-    phase1Radius,
-    enforceTerrain: true
-  });
-  const { phases, flightPath, latencyMs } = prediction;
 
   // File upload handler
   const handleFileUpload = (e) => {
@@ -120,13 +115,11 @@ export default function ImageMapPredictor() {
     reader.readAsDataURL(file);
   };
 
-  // Quick sample loader
   const handleLoadSample = (sampleSrc, name) => {
     setImageName(name);
     setUploadedImageSrc(sampleSrc);
   };
 
-  // Focus on a specific stage (centers and zooms into that safe zone circle)
   const focusStage = (stageNum = 5) => {
     const target = phases[stageNum];
     const canvas = canvasRef.current;
@@ -151,7 +144,6 @@ export default function ImageMapPredictor() {
     setTransform({ scale: 1, offsetX: 0, offsetY: 0 });
   };
 
-  // Convert clicked screen pixel into real map meters (0-8000), accounting for zoom & pan
   const screenToMeters = (clickX, clickY) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 4000, y: 4000 };
@@ -166,7 +158,6 @@ export default function ImageMapPredictor() {
     return { x: meterX, y: meterY };
   };
 
-  // Pan & Zoom Event Handlers
   const handleWheel = (e) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
@@ -229,7 +220,6 @@ export default function ImageMapPredictor() {
     }
   };
 
-  // Render the prediction overlaid on either 8K Erangel map or input image
   const renderCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -242,14 +232,12 @@ export default function ImageMapPredictor() {
     ctx.clearRect(0, 0, width, height);
 
     ctx.save();
-    // 1. Apply Pan & Zoom Viewport Transform
     const midX = width / 2;
     const midY = height / 2;
     ctx.translate(midX + transform.offsetX, midY + transform.offsetY);
     ctx.scale(transform.scale, transform.scale);
     ctx.translate(-midX, -midY);
 
-    // 2. Draw Base Map (8K Ultra Map or Uploaded Screenshot)
     const activeBaseImg = (mapBackground === '8k')
       ? (erangel8kRef.current || erangelPreviewRef.current || imageObjRef.current)
       : imageObjRef.current;
@@ -261,14 +249,13 @@ export default function ImageMapPredictor() {
       ctx.fillRect(0, 0, width, height);
     }
 
-    // Helper: meters (0-8000) to canvas pixels
     const mToPx = (m) => (m / MAP_EXTENT_METERS) * width;
     const strokeScale = 1 / Math.sqrt(Math.max(1, transform.scale));
 
     ctx.save();
     ctx.globalAlpha = overlayOpacity;
 
-    // 3. Draw Probability Shift Heatmap
+    // Heatmap
     if (showHeatmap && phases[1]) {
       const p1 = phases[1];
       const p1PxX = mToPx(p1.x);
@@ -297,14 +284,13 @@ export default function ImageMapPredictor() {
       ctx.restore();
     }
 
-    // 4. Draw Flight Path
+    // Flight Path
     if (showFlightLine) {
       const f1x = mToPx(flightStart.x);
       const f1y = mToPx(flightStart.y);
       const f2x = mToPx(flightEnd.x);
       const f2y = mToPx(flightEnd.y);
 
-      // Trajectory dashed line
       ctx.strokeStyle = '#d97706';
       ctx.lineWidth = Math.max(1.5, 3 * strokeScale);
       ctx.setLineDash([8 * strokeScale, 6 * strokeScale]);
@@ -314,7 +300,6 @@ export default function ImageMapPredictor() {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Flight direction arrow
       const angle = Math.atan2(f2y - f1y, f2x - f1x);
       const hLen = Math.max(8, 16 * strokeScale);
       ctx.fillStyle = '#d97706';
@@ -326,7 +311,6 @@ export default function ImageMapPredictor() {
       ctx.closePath();
       ctx.fill();
 
-      // Start circle marker
       ctx.fillStyle = '#ffffff';
       ctx.strokeStyle = '#d97706';
       ctx.lineWidth = Math.max(1.2, 2.5 * strokeScale);
@@ -334,17 +318,9 @@ export default function ImageMapPredictor() {
       ctx.arc(f1x, f1y, Math.max(3.5, 7 * strokeScale), 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-
-      const fontSize = Math.max(8, Math.round(11 * strokeScale));
-      ctx.font = `700 ${fontSize}px JetBrains Mono, monospace`;
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'rgba(0,0,0,0.85)';
-      ctx.shadowBlur = 4;
-      ctx.fillText('✈ FLIGHT START', f1x + 10 * strokeScale, f1y - 8 * strokeScale);
-      ctx.shadowBlur = 0;
     }
 
-    // 5. Draw Predicted Shift Vectors (Arrows)
+    // Shift Direction Vectors
     const phaseList = Object.values(phases).sort((a, b) => a.phase - b.phase);
 
     if (showShiftArrows && phaseList.length > 1) {
@@ -368,7 +344,6 @@ export default function ImageMapPredictor() {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Shift vector arrowhead
         const arrowAngle = Math.atan2(c2y - c1y, c2x - c1x);
         const arrowLen = Math.max(5, 9 * strokeScale);
         ctx.fillStyle = '#dc2626';
@@ -381,7 +356,7 @@ export default function ImageMapPredictor() {
       }
     }
 
-    // 6. Draw All 5 Sequential Safe Zone Circles
+    // Safe Zone Circles (Stages 1-5)
     phaseList.forEach((p) => {
       const isVisible = selectedStage === null || selectedStage === p.phase;
       if (!isVisible) return;
@@ -391,20 +366,17 @@ export default function ImageMapPredictor() {
       const cy = mToPx(p.y);
       const cr = mToPx(p.r);
 
-      // Circle Fill
-      ctx.fillStyle = cfg.bg || 'rgba(37, 99, 235, 0.08)';
+      ctx.fillStyle = cfg.bg || 'rgba(37, 99, 235, 0.1)';
       ctx.beginPath();
       ctx.arc(cx, cy, cr, 0, Math.PI * 2);
       ctx.fill();
 
-      // Circle Stroke
       ctx.strokeStyle = cfg.color;
       ctx.lineWidth = Math.max(1.4, ((selectedStage === p.phase) ? 3.5 : 2.5) * strokeScale);
       ctx.beginPath();
       ctx.arc(cx, cy, cr, 0, Math.PI * 2);
       ctx.stroke();
 
-      // Center Crosshair
       const chSize = Math.max(3.5, 7 * strokeScale);
       ctx.strokeStyle = cfg.color;
       ctx.lineWidth = Math.max(1.2, 2 * strokeScale);
@@ -415,7 +387,6 @@ export default function ImageMapPredictor() {
       ctx.lineTo(cx, cy + chSize);
       ctx.stroke();
 
-      // Stage Badge Tag
       const label = `Stage ${p.phase} • ${p.r}m`;
       const fontSize = Math.max(8, Math.round(11 * strokeScale));
       ctx.font = `700 ${fontSize}px JetBrains Mono, monospace`;
@@ -435,8 +406,8 @@ export default function ImageMapPredictor() {
       ctx.fillText(label, badgeX, badgeY);
     });
 
-    ctx.restore(); // restore globalAlpha
-    ctx.restore(); // restore viewport transform
+    ctx.restore();
+    ctx.restore();
   }, [
     mapBackground,
     transform,
@@ -447,38 +418,31 @@ export default function ImageMapPredictor() {
     selectedStage,
     phases,
     flightStart,
-    flightEnd,
-    is8kLoaded
+    flightEnd
   ]);
 
-  // Re-render canvas whenever relevant parameters change
   useEffect(() => {
     renderCanvas();
   }, [renderCanvas]);
 
-  // Download composited image
   const handleDownloadResult = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const link = document.createElement('a');
-    link.download = `ZonePrediction_${imageName.replace(/\.[^/.]+$/, "")}_AllStages.png`;
+    link.download = `ZonePrediction_${imageName.replace(/\.[^/.]+$/, "")}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
   };
 
   return (
     <div className="image-predictor-container">
-      {/* Top Banner / Ingestion Bar */}
+      {/* Top Upload Bar */}
       <div className="ingestion-deck tactical-card">
-        <div className="deck-left">
-          <div className="ingestion-header">
-            <FileImage size={18} className="deck-icon" />
-            <div>
-              <div className="deck-title">Upload Match Map</div>
-              <div className="deck-subtitle">
-                Upload your map screenshot to see all 5 predicted circle stages
-              </div>
-            </div>
+        <div className="ingestion-header">
+          <FileImage size={17} className="deck-icon" />
+          <div>
+            <div className="deck-title">Match Map Screenshot Scanner</div>
+            <div className="deck-subtitle">Upload map image to predict safe zone progression (Stages 1–5)</div>
           </div>
         </div>
 
@@ -495,35 +459,75 @@ export default function ImageMapPredictor() {
             className="upload-btn-primary"
             onClick={() => fileInputRef.current?.click()}
           >
-            <Upload size={15} />
-            <span>Upload Map Image</span>
+            <Upload size={13} />
+            <span>Upload Screenshot</span>
           </button>
 
           <div className="sample-btn-group">
-            <span className="sample-label">Or Samples:</span>
             <button
               className="sample-btn"
               onClick={() => handleLoadSample('/samples/match_sample_1.png', 'match_sample_1.png')}
             >
-              Match Sample
+              Sample Match
             </button>
             <button
               className="sample-btn"
               onClick={() => handleLoadSample('/samples/match_sample_2.png', 'erangel_official.png')}
             >
-              Official Erangel
+              Erangel Base
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Workspace: Canvas on Left, Calibration Controls on Right */}
+      {/* Rotation HUD Bar */}
+      <div className="abstracted-hud-bar tactical-card">
+        <div className="hud-metric">
+          <span className="hud-label">
+            <MapPin size={12} className="hud-icon" />
+            <span>Projected Final Zone</span>
+          </span>
+          <span className="hud-val">{briefing.primaryAnchor}</span>
+          <span className="hud-sub">Grid [{briefing.endgameGrid}] • {briefing.endgameTerrain}</span>
+        </div>
+
+        <div className="hud-metric">
+          <span className="hud-label">
+            <Clock size={12} className="hud-icon" />
+            <span>Rotation Urgency</span>
+          </span>
+          <span className="hud-val" style={{ color: briefing.urgencyColor }}>{briefing.urgency}</span>
+          <span className="hud-sub">Move Window: <b>{briefing.moveWindow}</b></span>
+        </div>
+
+        <div className="hud-metric">
+          <span className="hud-label">
+            <Car size={12} className="hud-icon" />
+            <span>Vehicle Priority</span>
+          </span>
+          <span className="hud-val">
+            {briefing.vehicleStatus === 'MANDATORY' ? '🚗 Secure Vehicles' : '🚶 Defilade Walk'}
+          </span>
+          <span className="hud-sub">{briefing.vehicleStatus === 'MANDATORY' ? 'Required for deep shift' : 'Safe on foot'}</span>
+        </div>
+
+        <div className="hud-metric">
+          <span className="hud-label">
+            <Compass size={12} className="hud-icon" />
+            <span>Stage 2 Shift</span>
+          </span>
+          <span className="hud-val">{briefing.shiftType}</span>
+          <span className="hud-sub">{briefing.shiftDescription}</span>
+        </div>
+      </div>
+
+      {/* Main Workspace */}
       <div className="predictor-workspace-grid">
-        {/* Left: Composited Map Image with Zone Predictions */}
+        {/* Left: Map */}
         <div className="image-canvas-card tactical-card">
           <div className="canvas-header-bar">
             <div className="image-meta mono">
-              <span>ACTIVE MAP: <b>{imageName}</b></span>
+              <span>MAP: <b>{imageName}</b></span>
             </div>
 
             <div className="view-mode-tabs">
@@ -532,14 +536,14 @@ export default function ImageMapPredictor() {
                 onClick={() => setViewMode('overlay')}
               >
                 <Eye size={13} />
-                <span>Full Overlay</span>
+                <span>Overlay</span>
               </button>
               <button
                 className={`tab-btn ${viewMode === 'stages' ? 'active' : ''}`}
                 onClick={() => setViewMode('stages')}
               >
                 <Layers size={13} />
-                <span>Stage-Wise Maps</span>
+                <span>Stages</span>
               </button>
               <button
                 className={`tab-btn ${viewMode === 'split' ? 'active' : ''}`}
@@ -555,28 +559,19 @@ export default function ImageMapPredictor() {
                 title="Download image with predicted zones"
               >
                 <Download size={13} />
-                <span>Download PNG</span>
+                <span>Export PNG</span>
               </button>
             </div>
           </div>
 
-          {/* Canvas Viewport */}
           <div className="canvas-container">
             {viewMode === 'stages' ? (
-              /* Stage-Wise Multiple Maps Grid */
               <div className="stages-multi-grid">
                 <div className="multi-grid-intro">
                   <div className="intro-text">
                     <b>Stages 1 to 5 Progression</b>
-                    <span>Individual maps showing each circle shift and safe zone.</span>
+                    <span>Individual maps showing each safe zone circle.</span>
                   </div>
-                  <button
-                    className="batch-download-btn mono"
-                    onClick={handleDownloadResult}
-                  >
-                    <Download size={13} />
-                    <span>Download All Stages PNG</span>
-                  </button>
                 </div>
 
                 <div className="stage-maps-masonry">
@@ -608,11 +603,11 @@ export default function ImageMapPredictor() {
             ) : viewMode === 'split' ? (
               <div className="split-view-wrapper">
                 <div className="split-panel">
-                  <div className="panel-badge">RAW INPUT IMAGE</div>
+                  <div className="panel-badge">RAW INPUT</div>
                   <img src={uploadedImageSrc} alt="Input Map" className="split-img" />
                 </div>
                 <div className="split-panel">
-                  <div className="panel-badge">PREDICTED ALL 5 STAGES (8K MAP)</div>
+                  <div className="panel-badge">PREDICTED STAGES</div>
                   <canvas
                     ref={canvasRef}
                     width={800}
@@ -628,23 +623,21 @@ export default function ImageMapPredictor() {
               </div>
             ) : (
               <div className="single-canvas-wrapper">
-                {/* 8K Zoom & Map Controls Bar */}
                 <div className="canvas-zoom-toolbar">
                   <div className="toolbar-left">
                     <div className="map-source-switch">
                       <button
                         className={`map-switch-btn ${mapBackground === '8k' ? 'active' : ''}`}
                         onClick={() => setMapBackground('8k')}
-                        title="Show prediction on Ultra 8K Erangel map"
+                        title="Show prediction on 8K map"
                       >
                         <Map size={13} />
-                        <span>8K Ultra Map</span>
-                        <span className="hd-tag">8K</span>
+                        <span>8K Map</span>
                       </button>
                       <button
                         className={`map-switch-btn ${mapBackground === 'screenshot' ? 'active' : ''}`}
                         onClick={() => setMapBackground('screenshot')}
-                        title="Show prediction overlaid on your uploaded screenshot"
+                        title="Show prediction on screenshot"
                       >
                         <FileImage size={13} />
                         <span>Screenshot</span>
@@ -656,16 +649,16 @@ export default function ImageMapPredictor() {
                     <button
                       className="focus-stage5-btn"
                       onClick={() => focusStage(5)}
-                      title="Zoom directly into Stage 5 Final Circle"
+                      title="Zoom into Stage 5 Final Circle"
                     >
                       <Target size={13} />
-                      <span>Focus Final Zone (Stage 5)</span>
+                      <span>Focus Final Zone</span>
                     </button>
                   </div>
 
                   <div className="toolbar-right">
                     <span className="zoom-level-badge mono">
-                      🔍 {Math.round(transform.scale * 100)}%
+                      {Math.round(transform.scale * 100)}%
                     </span>
                     <button
                       className="zoom-tool-btn"
@@ -684,7 +677,7 @@ export default function ImageMapPredictor() {
                     <button
                       className="zoom-tool-btn"
                       onClick={resetView}
-                      title="Reset Zoom to Fit"
+                      title="Reset View"
                     >
                       <Maximize2 size={13} />
                     </button>
@@ -708,9 +701,9 @@ export default function ImageMapPredictor() {
                     <div className="calibration-prompt-pill">
                       <Crosshair size={14} />
                       <span>
-                        {calibrationMode === 'setCircle' && 'Click on the map to set Stage 1 Center'}
-                        {calibrationMode === 'setFlightStart' && 'Click flight trajectory START point on the map'}
-                        {calibrationMode === 'setFlightEnd' && 'Now click flight trajectory END point on the map'}
+                        {calibrationMode === 'setCircle' && 'Click map to place Stage 1 Center'}
+                        {calibrationMode === 'setFlightStart' && 'Click flight trajectory START point on map'}
+                        {calibrationMode === 'setFlightEnd' && 'Now click flight trajectory END point on map'}
                       </span>
                       <button className="cancel-pill-btn" onClick={() => setCalibrationMode(null)}>
                         Cancel
@@ -722,14 +715,13 @@ export default function ImageMapPredictor() {
             )}
           </div>
 
-          {/* Quick Stage Filter Scrubber */}
           <div className="stage-filter-bar">
             <span className="filter-title">Inspect Stage:</span>
             <button
               className={`stage-pill ${selectedStage === null ? 'active' : ''}`}
               onClick={() => setSelectedStage(null)}
             >
-              All 5 Stages
+              All Stages
             </button>
             {[1, 2, 3, 4, 5].map((stg) => (
               <button
@@ -738,7 +730,7 @@ export default function ImageMapPredictor() {
                 style={{ '--stg-color': PHASE_CONFIG[stg].color }}
                 onClick={() => setSelectedStage(stg)}
               >
-                Stage {stg} ({PHASE_CONFIG[stg].name})
+                Stage {stg}
               </button>
             ))}
 
@@ -756,46 +748,46 @@ export default function ImageMapPredictor() {
           </div>
         </div>
 
-        {/* Right: Calibration & Parameter Deck */}
+        {/* Right: Clean Calibration Controls */}
         <div className="calibration-deck tactical-card">
           <div className="deck-title-bar">
             <div className="deck-title-text">
-              <Sliders size={15} className="deck-title-icon" />
-              <span>Adjust Zones & Flight</span>
+              <Sliders size={14} className="deck-title-icon" />
+              <span>Map Calibration</span>
             </div>
           </div>
 
           <div className="deck-body">
-            {/* Quick Calibration Buttons */}
+            {/* Interactive Pinpoint Tools */}
             <div className="calibration-tools-group">
-              <div className="tools-title">🎯 Quick Pinpoint on Map</div>
+              <div className="tools-title">Map Pinpointing</div>
               <div className="tools-grid">
                 <button
                   className={`tool-action-btn ${calibrationMode === 'setCircle' ? 'active' : ''}`}
                   onClick={() => setCalibrationMode(calibrationMode === 'setCircle' ? null : 'setCircle')}
                 >
-                  <Crosshair size={14} />
+                  <Crosshair size={13} />
                   <span>Set Stage 1 Center</span>
                 </button>
                 <button
                   className={`tool-action-btn ${calibrationMode === 'setFlightStart' ? 'active' : ''}`}
                   onClick={() => setCalibrationMode(calibrationMode === 'setFlightStart' ? null : 'setFlightStart')}
                 >
-                  <Plane size={14} />
-                  <span>Set Flight Path</span>
+                  <Plane size={13} />
+                  <span>Set Flight Vector</span>
                 </button>
               </div>
             </div>
 
-            {/* Phase 1 Parameters */}
+            {/* Stage 1 Parameters */}
             <div className="param-group">
               <div className="group-label">
-                <span>⭕ Stage 1 Circle</span>
-                <span className="mono">Grid {phases[1]?.grid}</span>
+                <span>Stage 1 Center (m)</span>
+                <span className="mono">{phase1Center.x}, {phase1Center.y}</span>
               </div>
               <div className="two-col-inputs">
                 <div className="input-box">
-                  <label>Center X (m)</label>
+                  <label>Center X</label>
                   <input
                     type="number"
                     min="0"
@@ -806,7 +798,7 @@ export default function ImageMapPredictor() {
                   />
                 </div>
                 <div className="input-box">
-                  <label>Center Y (m)</label>
+                  <label>Center Y</label>
                   <input
                     type="number"
                     min="0"
@@ -818,7 +810,7 @@ export default function ImageMapPredictor() {
                 </div>
               </div>
 
-              <div className="slider-box">
+              <div className="slider-box" style={{ marginTop: '6px' }}>
                 <div className="slider-label">
                   <span>Circle Radius</span>
                   <span className="mono">{phase1Radius}m</span>
@@ -837,40 +829,48 @@ export default function ImageMapPredictor() {
             {/* Flight Path Parameters */}
             <div className="param-group">
               <div className="group-label">
-                <span>✈️ Match Flight Path</span>
+                <span>Flight Vector (m)</span>
                 <span className="mono">
-                  {Math.round(flightPath.angle)}° ({toCompassBearing(flightPath.angle)})
+                  {Math.round(flightPath.angle)}° • {Math.round(flightPath.lengthMeters / 1000)}km
                 </span>
               </div>
               <div className="two-col-inputs">
                 <div className="input-box">
-                  <label>Flight Start X</label>
+                  <label>Start X</label>
                   <input
                     type="number"
+                    min="0"
+                    max="8000"
                     value={flightStart.x}
                     onChange={(e) => setFlightStart({ ...flightStart, x: Number(e.target.value) })}
                   />
                 </div>
                 <div className="input-box">
-                  <label>Flight Start Y</label>
+                  <label>Start Y</label>
                   <input
                     type="number"
+                    min="0"
+                    max="8000"
                     value={flightStart.y}
                     onChange={(e) => setFlightStart({ ...flightStart, y: Number(e.target.value) })}
                   />
                 </div>
                 <div className="input-box">
-                  <label>Flight End X</label>
+                  <label>End X</label>
                   <input
                     type="number"
+                    min="0"
+                    max="8000"
                     value={flightEnd.x}
                     onChange={(e) => setFlightEnd({ ...flightEnd, x: Number(e.target.value) })}
                   />
                 </div>
                 <div className="input-box">
-                  <label>Flight End Y</label>
+                  <label>End Y</label>
                   <input
                     type="number"
+                    min="0"
+                    max="8000"
                     value={flightEnd.y}
                     onChange={(e) => setFlightEnd({ ...flightEnd, y: Number(e.target.value) })}
                   />
@@ -880,7 +880,7 @@ export default function ImageMapPredictor() {
 
             {/* Layer Toggles */}
             <div className="param-group">
-              <div className="group-label">Display Options</div>
+              <div className="group-label">Overlays</div>
               <div className="toggle-list">
                 <label className="toggle-row">
                   <input
@@ -888,7 +888,7 @@ export default function ImageMapPredictor() {
                     checked={showHeatmap}
                     onChange={(e) => setShowHeatmap(e.target.checked)}
                   />
-                  <span>Show Zone Shift Heatmap</span>
+                  <span>Shift Probability Heatmap</span>
                 </label>
                 <label className="toggle-row">
                   <input
@@ -896,7 +896,7 @@ export default function ImageMapPredictor() {
                     checked={showShiftArrows}
                     onChange={(e) => setShowShiftArrows(e.target.checked)}
                   />
-                  <span>Show Shift Direction Arrows</span>
+                  <span>Shift Direction Arrows</span>
                 </label>
                 <label className="toggle-row">
                   <input
@@ -904,7 +904,7 @@ export default function ImageMapPredictor() {
                     checked={showFlightLine}
                     onChange={(e) => setShowFlightLine(e.target.checked)}
                   />
-                  <span>Show Flight Path</span>
+                  <span>Flight Trajectory Line</span>
                 </label>
               </div>
             </div>
@@ -912,12 +912,12 @@ export default function ImageMapPredictor() {
         </div>
       </div>
 
-      {/* Bottom Telemetry Cards for All Predicted Stages */}
+      {/* Bottom Stage Progression Cards */}
       <div className="all-stages-summary tactical-card">
         <div className="summary-header">
           <div className="summary-title">
-            <CheckCircle2 size={15} className="summary-icon" />
-            <span>Predicted Stages (1 to 5)</span>
+            <CheckCircle2 size={15} color="#059669" />
+            <span>Predicted Safe Zone Stages (1 to 5)</span>
           </div>
         </div>
 
@@ -926,6 +926,7 @@ export default function ImageMapPredictor() {
             const p = phases[stg];
             const cfg = PHASE_CONFIG[stg];
             if (!p) return null;
+            const poi = getErangelLandmark(p.x, p.y);
 
             return (
               <div
@@ -935,31 +936,31 @@ export default function ImageMapPredictor() {
               >
                 <div className="card-top">
                   <span className="stage-tag" style={{ color: cfg.color }}>
-                    Stage {stg}
+                    Stage {stg} ({cfg.name})
                   </span>
                   <span className="grid-tag mono">Grid {p.grid}</span>
                 </div>
 
-                <div className="card-body mono">
+                <div className="card-body">
                   <div className="data-line">
-                    <span className="data-label">Radius:</span>
-                    <span className="data-val">{p.r}m</span>
+                    <span className="data-label">Landmark:</span>
+                    <span className="data-val truncate">{poi.name}</span>
+                  </div>
+                  <div className="data-line">
+                    <span className="data-label">Diameter:</span>
+                    <span className="data-val mono">{(p.r * 2 / 1000).toFixed(1)} km</span>
                   </div>
                   <div className="data-line">
                     <span className="data-label">Shift:</span>
-                    <span className="data-val">
-                      {stg === 1 ? 'Base Circle' : `${Math.round(p.shiftDist)}m (${p.compass})`}
+                    <span className="data-val mono">
+                      {stg === 1 ? 'Base Circle' : `${p.shiftDist}m ${p.compass}`}
                     </span>
-                  </div>
-                  <div className="data-line">
-                    <span className="data-label">Center:</span>
-                    <span className="data-val">({Math.round(p.x)}m, {Math.round(p.y)}m)</span>
                   </div>
                 </div>
 
                 <div className="card-footer">
                   <span className="contain-status">
-                    {stg === 1 ? 'Drop Zone' : `Stage ${stg} Safe Zone`}
+                    {stg === 1 ? 'Mainland Drop' : stg === 5 ? 'Final Safe Zone' : `Stage ${stg} Safe Circle`}
                   </span>
                 </div>
               </div>
@@ -967,740 +968,6 @@ export default function ImageMapPredictor() {
           })}
         </div>
       </div>
-
-      <style>{`
-        .image-predictor-container {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-        }
-
-        .ingestion-deck {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 14px 22px;
-          gap: 16px;
-          flex-wrap: wrap;
-        }
-
-        .ingestion-header {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .deck-icon {
-          color: #2563eb;
-        }
-
-        .deck-title {
-          font-weight: 800;
-          font-size: 15px;
-          color: var(--text-primary);
-        }
-
-        .deck-subtitle {
-          font-size: 12px;
-          color: var(--text-muted);
-        }
-
-        .deck-right {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          flex-wrap: wrap;
-        }
-
-        .upload-btn-primary {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 16px;
-          background: #2563eb;
-          color: #ffffff;
-          font-weight: 700;
-          font-size: 13px;
-          border-radius: var(--radius-sm);
-          box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
-        }
-
-        .upload-btn-primary:hover {
-          background: #1d4ed8;
-        }
-
-        .sample-btn-group {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .sample-label {
-          font-size: 11px;
-          color: var(--text-muted);
-          font-weight: 600;
-        }
-
-        .sample-btn {
-          padding: 6px 10px;
-          font-size: 11px;
-          font-weight: 600;
-          background: var(--bg-surface-subtle);
-          color: var(--text-secondary);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-        }
-
-        .sample-btn:hover {
-          background: var(--bg-hover);
-          color: var(--text-primary);
-        }
-
-        .predictor-workspace-grid {
-          display: grid;
-          grid-template-columns: minmax(0, 1.55fr) minmax(360px, 1fr);
-          gap: 20px;
-          align-items: start;
-        }
-
-        .image-canvas-card {
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-
-        .canvas-header-bar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 16px;
-          background: var(--bg-surface-subtle);
-          border-bottom: 1px solid var(--border-subtle);
-          flex-wrap: wrap;
-          gap: 10px;
-        }
-
-        .image-meta {
-          font-size: 12px;
-          color: var(--text-primary);
-        }
-
-        .meta-dim {
-          color: var(--text-muted);
-          margin-left: 6px;
-        }
-
-        .view-mode-tabs {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .tab-btn {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          padding: 5px 10px;
-          background: var(--bg-surface);
-          color: var(--text-secondary);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          font-size: 11px;
-          font-weight: 600;
-        }
-
-        .tab-btn:hover {
-          background: var(--bg-hover);
-          color: var(--text-primary);
-        }
-
-        .tab-btn.active {
-          background: #2563eb;
-          color: #ffffff;
-          border-color: #2563eb;
-        }
-
-        .download-btn {
-          background: var(--color-success-bg);
-          color: var(--color-success);
-          border-color: rgba(5, 150, 105, 0.3);
-        }
-
-        .download-btn:hover {
-          background: #059669;
-          color: #ffffff;
-        }
-
-        .canvas-container {
-          background: #0f172a;
-          position: relative;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 480px;
-          overflow: hidden;
-        }
-
-        .stages-multi-grid {
-          width: 100%;
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-          padding: 16px;
-          background: var(--bg-surface-subtle);
-        }
-
-        .multi-grid-intro {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 14px;
-          background: var(--bg-surface);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          flex-wrap: wrap;
-          gap: 10px;
-        }
-
-        .intro-text {
-          display: flex;
-          flex-direction: column;
-          font-size: 11px;
-          color: var(--text-secondary);
-        }
-
-        .intro-text b {
-          font-size: 12px;
-          color: var(--text-primary);
-        }
-
-        .batch-download-btn {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 12px;
-          background: #2563eb;
-          color: #ffffff;
-          font-size: 11px;
-          font-weight: 700;
-          border-radius: var(--radius-sm);
-        }
-
-        .batch-download-btn:hover {
-          background: #1d4ed8;
-        }
-
-        .stage-maps-masonry {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-          gap: 14px;
-        }
-
-        .single-canvas-wrapper {
-          position: relative;
-          width: 100%;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .canvas-zoom-toolbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 8px 14px;
-          background: var(--bg-surface-subtle);
-          border-bottom: 1px solid var(--border-subtle);
-          flex-wrap: wrap;
-          gap: 10px;
-        }
-
-        .map-source-switch {
-          display: flex;
-          align-items: center;
-          background: var(--bg-surface);
-          padding: 2px;
-          border-radius: var(--radius-sm);
-          border: 1px solid var(--border-subtle);
-          gap: 2px;
-        }
-
-        .map-switch-btn {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          padding: 4px 10px;
-          border-radius: 4px;
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--text-secondary);
-          background: transparent;
-          transition: all 0.15s ease;
-        }
-
-        .map-switch-btn:hover {
-          color: var(--text-primary);
-        }
-
-        .map-switch-btn.active {
-          background: #2563eb;
-          color: #ffffff;
-        }
-
-        .hd-tag {
-          font-size: 9px;
-          font-weight: 800;
-          padding: 1px 4px;
-          border-radius: 3px;
-          background: #d97706;
-          color: #ffffff;
-        }
-
-        .focus-stage5-btn {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          padding: 5px 13px;
-          background: #7c3aed;
-          color: #ffffff;
-          border-radius: var(--radius-sm);
-          font-size: 11px;
-          font-weight: 700;
-          transition: all 0.15s ease;
-          box-shadow: 0 1px 4px rgba(124, 58, 237, 0.25);
-        }
-
-        .focus-stage5-btn:hover {
-          background: #6d28d9;
-          transform: translateY(-1px);
-        }
-
-        .toolbar-right {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .zoom-level-badge {
-          font-size: 11px;
-          font-weight: 700;
-          color: var(--text-secondary);
-          padding: 2px 6px;
-        }
-
-        .zoom-tool-btn {
-          width: 28px;
-          height: 28px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: var(--bg-surface);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          color: var(--text-secondary);
-          cursor: pointer;
-          transition: all 0.15s ease;
-        }
-
-        .zoom-tool-btn:hover {
-          background: var(--bg-hover);
-          color: var(--text-primary);
-        }
-
-        .canvas-viewport-box {
-          position: relative;
-          width: 100%;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          background: #0f172a;
-          overflow: hidden;
-        }
-
-        .main-image-canvas {
-          max-width: 100%;
-          height: auto;
-          display: block;
-          user-select: none;
-        }
-
-        .cursor-grab {
-          cursor: grab;
-        }
-
-        .cursor-grabbing {
-          cursor: grabbing;
-        }
-
-        .calibrating-cursor {
-          cursor: crosshair;
-        }
-
-        .calibration-prompt-pill {
-          position: absolute;
-          top: 14px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: rgba(15, 23, 42, 0.92);
-          color: #ffffff;
-          border: 1px solid #3b82f6;
-          padding: 8px 16px;
-          border-radius: var(--radius-full);
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          font-size: 12px;
-          font-weight: 600;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-          z-index: 10;
-        }
-
-        .cancel-pill-btn {
-          padding: 2px 8px;
-          background: #334155;
-          color: #ffffff;
-          border-radius: var(--radius-sm);
-          font-size: 10px;
-        }
-
-        .split-view-wrapper {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-          padding: 12px;
-          width: 100%;
-        }
-
-        .split-panel {
-          position: relative;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          background: #1e293b;
-          border-radius: var(--radius-sm);
-          overflow: hidden;
-        }
-
-        .panel-badge {
-          position: absolute;
-          top: 8px;
-          left: 8px;
-          background: rgba(0,0,0,0.7);
-          color: #ffffff;
-          font-size: 9px;
-          font-weight: 700;
-          padding: 3px 6px;
-          border-radius: 4px;
-          z-index: 5;
-        }
-
-        .split-img, .split-canvas {
-          max-width: 100%;
-          height: auto;
-          display: block;
-        }
-
-        .stage-filter-bar {
-          display: flex;
-          align-items: center;
-          padding: 10px 16px;
-          background: var(--bg-surface-subtle);
-          border-top: 1px solid var(--border-subtle);
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-
-        .filter-title {
-          font-size: 11px;
-          font-weight: 700;
-          color: var(--text-secondary);
-        }
-
-        .stage-pill {
-          padding: 4px 10px;
-          font-size: 11px;
-          font-weight: 700;
-          background: var(--bg-surface);
-          color: var(--text-secondary);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-        }
-
-        .stage-pill:hover {
-          background: var(--bg-hover);
-        }
-
-        .stage-pill.active {
-          background: #2563eb;
-          color: #ffffff;
-          border-color: #2563eb;
-        }
-
-        .opacity-slider-group {
-          margin-left: auto;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 11px;
-          color: var(--text-muted);
-        }
-
-        .opacity-slider-group input {
-          width: 80px;
-        }
-
-        .calibration-deck {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .deck-title-bar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 12px 18px;
-          background: var(--bg-surface-subtle);
-          border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .deck-title-text {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-weight: 700;
-          font-size: 13px;
-          color: var(--text-primary);
-        }
-
-        .deck-title-icon {
-          color: #2563eb;
-        }
-
-        .deck-body {
-          padding: 16px 18px;
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-
-        .calibration-tools-group {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          padding-bottom: 14px;
-          border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .tools-title {
-          font-size: 12px;
-          font-weight: 700;
-          color: var(--text-secondary);
-        }
-
-        .tools-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-
-        .tool-action-btn {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          padding: 8px;
-          background: var(--bg-surface-subtle);
-          color: var(--text-secondary);
-          border: 1px solid var(--border-subtle);
-          border-radius: var(--radius-sm);
-          font-size: 11px;
-          font-weight: 600;
-        }
-
-        .tool-action-btn:hover {
-          background: var(--bg-hover);
-          color: var(--text-primary);
-        }
-
-        .tool-action-btn.active {
-          background: #2563eb;
-          color: #ffffff;
-          border-color: #2563eb;
-        }
-
-        .param-group {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          padding-bottom: 14px;
-          border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .param-group:last-child {
-          border-bottom: none;
-          padding-bottom: 0;
-        }
-
-        .group-label {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-size: 12px;
-          font-weight: 700;
-          color: var(--text-secondary);
-        }
-
-        .two-col-inputs {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
-        }
-
-        .input-box {
-          display: flex;
-          flex-direction: column;
-          gap: 3px;
-        }
-
-        .input-box label {
-          font-size: 11px;
-          color: var(--text-muted);
-          font-weight: 600;
-        }
-
-        .slider-box {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .slider-label {
-          display: flex;
-          justify-content: space-between;
-          font-size: 11px;
-          color: var(--text-muted);
-          font-weight: 600;
-        }
-
-        .toggle-list {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .toggle-row {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 12px;
-          color: var(--text-primary);
-          cursor: pointer;
-        }
-
-        .toggle-row input {
-          accent-color: #2563eb;
-        }
-
-        .all-stages-summary {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .summary-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 12px 18px;
-          background: var(--bg-surface-subtle);
-          border-bottom: 1px solid var(--border-subtle);
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .summary-title {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-weight: 700;
-          font-size: 13px;
-          color: var(--text-primary);
-        }
-
-        .summary-icon {
-          color: #059669;
-        }
-
-        .stages-cards-row {
-          padding: 16px 18px;
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 12px;
-        }
-
-        .stage-summary-card {
-          background: var(--bg-surface-subtle);
-          border: 1px solid var(--border-subtle);
-          border-left: 4px solid var(--card-border);
-          border-radius: var(--radius-sm);
-          padding: 12px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .card-top {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .stage-tag {
-          font-weight: 800;
-          font-size: 13px;
-        }
-
-        .grid-tag {
-          font-size: 10px;
-          background: var(--bg-surface);
-          border: 1px solid var(--border-subtle);
-          padding: 2px 6px;
-          border-radius: var(--radius-sm);
-          color: var(--text-secondary);
-        }
-
-        .card-body {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .data-line {
-          display: flex;
-          justify-content: space-between;
-          font-size: 11px;
-        }
-
-        .data-label {
-          color: var(--text-muted);
-        }
-
-        .data-val {
-          font-weight: 700;
-          color: var(--text-primary);
-        }
-
-        .card-footer {
-          margin-top: 4px;
-          font-size: 10px;
-          font-weight: 600;
-          color: var(--color-success);
-        }
-
-        @media (max-width: 1200px) {
-          .predictor-workspace-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
     </div>
   );
 }

@@ -1,14 +1,11 @@
 import React from 'react';
 import { 
-  BarChart3, 
   CheckCircle2, 
-  AlertTriangle, 
-  Navigation2, 
-  Maximize, 
-  Circle,
-  ShieldCheck
+  MapPin, 
+  Layers, 
+  ChevronRight 
 } from 'lucide-react';
-import { PHASE_CONFIG } from '../utils/engine';
+import { PHASE_CONFIG, getErangelLandmark } from '../utils/engine';
 
 export default function TelemetryMatrix({
   phases,
@@ -17,20 +14,34 @@ export default function TelemetryMatrix({
 }) {
   const phaseEntries = Object.values(phases).sort((a, b) => a.phase - b.phase);
 
+  const getStageTacticalRole = (stageNum) => {
+    switch (stageNum) {
+      case 1: return { role: 'Initial Drop', tactic: 'Mainland drop area & vehicle scouting' };
+      case 2: return { role: 'Primary Shift', tactic: 'First major rotation pull • Secure deep compounds' };
+      case 3: return { role: 'Mid-Game Choke', tactic: 'River bridges & ridges become bottleneck zones' };
+      case 4: return { role: 'Late Collapse', tactic: 'High-ground crest control & vehicle barricades' };
+      case 5: return { role: 'Final Circle', tactic: 'Endgame victory defilade & smoke discipline' };
+      default: return { role: 'Safe Zone', tactic: 'Rotational transit' };
+    }
+  };
+
   return (
     <div className="telemetry-deck tactical-card">
       <div className="telemetry-header">
-        <div className="deck-title">
-          <BarChart3 size={15} className="title-icon" />
-          <span>Stage Breakdown (Stages 1–5)</span>
+        <div className="header-title">
+          <Layers size={14} className="title-icon" />
+          <span>Stage Progression (Stages 1 to 5)</span>
         </div>
+        <span className="telemetry-hint">Click any stage to isolate on the map</span>
       </div>
 
-      <div className="phase-cards-container">
+      <div className="phase-cards-row">
         {phaseEntries.map((p) => {
           const cfg = PHASE_CONFIG[p.phase] || { color: '#2563eb', label: `Stage ${p.phase}` };
           const isSelected = activePhase === p.phase;
           const isPhase1 = p.phase === 1;
+          const poi = getErangelLandmark(p.x, p.y);
+          const meta = getStageTacticalRole(p.phase);
 
           return (
             <div
@@ -39,54 +50,41 @@ export default function TelemetryMatrix({
               style={{ '--phase-color': cfg.color }}
               onClick={() => setActivePhase(isSelected ? null : p.phase)}
             >
-              <div className="phase-card-header">
-                <div className="phase-pill">
-                  <div className="phase-dot" style={{ background: cfg.color }} />
-                  <span className="phase-name">Stage {p.phase}</span>
-                  <span className="phase-sublabel">{cfg.name}</span>
+              <div className="card-top-bar">
+                <div className="stage-pill-tag" style={{ color: cfg.color, backgroundColor: `${cfg.color}15` }}>
+                  <span className="dot" style={{ backgroundColor: cfg.color }} />
+                  <span>Stage {p.phase}</span>
                 </div>
-
-                <div className="phase-grid-badge mono">
-                  GRID: <b>{p.grid}</b>
-                </div>
+                <span className="grid-ref-tag mono">Grid {p.grid}</span>
               </div>
 
-              <div className="phase-metrics-grid">
-                <div className="metric-box">
-                  <span className="metric-label">Circle Radius</span>
-                  <span className="metric-val mono">
-                    {p.r}m
-                  </span>
-                </div>
-
-                <div className="metric-box">
-                  <span className="metric-label">Shift Distance</span>
-                  <span className="metric-val mono">
-                    {isPhase1 ? 'Initial Drop' : `${Math.round(p.shiftDist)}m`}
-                  </span>
-                </div>
-
-                <div className="metric-box">
-                  <span className="metric-label">Shift Direction</span>
-                  <span className="metric-val mono">
-                    {isPhase1 ? 'Center Drop' : `${p.compass}`}
-                  </span>
-                </div>
-
-                <div className="metric-box">
-                  <span className="metric-label">Center Point</span>
-                  <span className="metric-val mono">
-                    {Math.round(p.x)}m, {Math.round(p.y)}m
-                  </span>
-                </div>
-              </div>
-
-              {/* Status footer for each phase */}
-              <div className="phase-footer">
-                <span className="footer-tag tag-containment">
-                  <CheckCircle2 size={11} />
-                  <span>Stage {p.phase} Safe Zone</span>
+              <div className="card-landmark">
+                <span className="landmark-title">
+                  <MapPin size={12} style={{ color: cfg.color, flexShrink: 0 }} />
+                  <span className="truncate">{poi.name}</span>
                 </span>
+                <span className="landmark-tactic">{meta.tactic}</span>
+              </div>
+
+              <div className="card-kpi-stack">
+                <div className="kpi-line">
+                  <span className="kpi-key">Zone Size:</span>
+                  <span className="kpi-val mono">{(p.r * 2 / 1000).toFixed(1)}km</span>
+                </div>
+                <div className="kpi-line">
+                  <span className="kpi-key">Circle Shift:</span>
+                  <span className="kpi-val mono highlight">
+                    {isPhase1 ? 'Drop Center' : `${p.shiftDist}m ${p.compass}`}
+                  </span>
+                </div>
+              </div>
+
+              <div className="card-status-footer">
+                <span className="status-label">
+                  <CheckCircle2 size={11} color={cfg.color} />
+                  <span>{meta.role}</span>
+                </span>
+                <ChevronRight size={13} className="arrow-icon" />
               </div>
             </div>
           );
@@ -97,163 +95,185 @@ export default function TelemetryMatrix({
         .telemetry-deck {
           display: flex;
           flex-direction: column;
+          gap: 12px;
+          padding: 16px 20px;
         }
 
         .telemetry-header {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 12px 18px;
-          border-bottom: 1px solid var(--border-subtle);
-          background: var(--bg-surface-subtle);
           flex-wrap: wrap;
           gap: 8px;
         }
 
-        .deck-title {
+        .header-title {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 7px;
+          font-size: 13.5px;
           font-weight: 700;
-          font-size: 13px;
           color: var(--text-primary);
         }
 
         .title-icon {
-          color: #059669;
+          color: var(--color-phase1);
         }
 
-        .deck-status-badges {
-          display: flex;
-          gap: 8px;
+        .telemetry-hint {
+          font-size: 11px;
+          color: var(--text-muted);
         }
 
-        .phase-cards-container {
-          padding: 14px 18px;
+        .phase-cards-row {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
           gap: 12px;
         }
 
         .phase-card {
-          background: var(--bg-surface-subtle);
-          border: 1px solid var(--border-subtle);
-          border-left: 4px solid var(--phase-color);
-          border-radius: var(--radius-sm);
-          padding: 12px;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 9px;
+          padding: 12px 14px;
+          border-radius: var(--radius-sm);
+          background: var(--bg-surface-subtle);
+          border: 1px solid var(--border-subtle);
           cursor: pointer;
           transition: all 0.15s ease;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .phase-card::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 3px;
+          background: var(--phase-color);
         }
 
         .phase-card:hover {
-          background: var(--bg-hover);
-          border-color: var(--border-medium);
           transform: translateY(-1px);
+          border-color: var(--phase-color);
         }
 
         .phase-card.selected {
           border-color: var(--phase-color);
-          box-shadow: 0 0 0 1px var(--phase-color);
           background: var(--bg-surface);
+          box-shadow: 0 0 0 1.5px var(--phase-color);
         }
 
-        .phase-card-header {
+        .card-top-bar {
           display: flex;
           align-items: center;
           justify-content: space-between;
         }
 
-        .phase-pill {
+        .stage-pill-tag {
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 5px;
+          padding: 2px 7px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 700;
         }
 
-        .phase-dot {
-          width: 8px;
-          height: 8px;
+        .stage-pill-tag .dot {
+          width: 5px;
+          height: 5px;
           border-radius: 50%;
         }
 
-        .phase-name {
-          font-weight: 800;
-          font-size: 13px;
-          color: var(--text-primary);
-        }
-
-        .phase-sublabel {
-          font-size: 10px;
-          color: var(--text-muted);
-        }
-
-        .phase-grid-badge {
-          font-size: 11px;
-          color: var(--text-secondary);
+        .grid-ref-tag {
+          font-size: 10.5px;
+          font-weight: 700;
+          padding: 2px 5px;
+          border-radius: 3px;
           background: var(--bg-surface);
-          padding: 2px 6px;
-          border-radius: var(--radius-sm);
           border: 1px solid var(--border-subtle);
+          color: var(--text-secondary);
         }
 
-        .phase-metrics-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 8px;
-        }
-
-        .metric-box {
+        .card-landmark {
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 3px;
         }
 
-        .metric-label {
-          font-size: 10px;
-          color: var(--text-muted);
-          font-weight: 600;
-        }
-
-        .metric-val {
-          font-size: 12px;
+        .landmark-title {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 12.5px;
           font-weight: 700;
           color: var(--text-primary);
         }
 
-        .metric-val small {
-          font-size: 10px;
-          color: var(--text-muted);
-          font-weight: normal;
+        .truncate {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
-        .phase-footer {
+        .landmark-tactic {
+          font-size: 11px;
+          color: var(--text-muted);
+          line-height: 1.35;
+        }
+
+        .card-kpi-stack {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+          padding: 7px 9px;
+          background: var(--bg-surface);
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--border-subtle);
+        }
+
+        .kpi-line {
           display: flex;
           align-items: center;
-          gap: 6px;
-          margin-top: 2px;
-          flex-wrap: wrap;
+          justify-content: space-between;
+          font-size: 11px;
         }
 
-        .footer-tag {
-          display: inline-flex;
+        .kpi-key {
+          color: var(--text-muted);
+        }
+
+        .kpi-val {
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .kpi-val.highlight {
+          color: var(--phase-color);
+        }
+
+        .card-status-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding-top: 6px;
+          border-top: 1px solid var(--border-subtle);
+          font-size: 10.5px;
+          font-weight: 600;
+          color: var(--text-muted);
+        }
+
+        .status-label {
+          display: flex;
           align-items: center;
           gap: 4px;
-          font-size: 10px;
-          font-weight: 600;
-          padding: 2px 6px;
-          border-radius: var(--radius-sm);
         }
 
-        .tag-containment {
-          background: var(--color-success-bg);
-          color: var(--color-success);
-        }
-
-        .tag-reproject {
-          background: var(--color-info-bg);
-          color: var(--color-info);
+        .arrow-icon {
+          color: var(--text-faint);
         }
       `}</style>
     </div>

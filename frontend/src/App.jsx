@@ -6,23 +6,17 @@ import TelemetryMatrix from './components/TelemetryMatrix';
 import TacticalBriefing from './components/TacticalBriefing';
 import TimelineScrubber from './components/TimelineScrubber';
 import ImageMapPredictor from './components/ImageMapPredictor';
-import LandingPage from './components/LandingPage';
 import { 
   predictSequentialPhases, 
-  PRESET_SCENARIOS, 
   DEFAULT_PHASE_RADII_METERS 
 } from './utils/engine';
 import './App.css';
 
 export default function App() {
-  // Theme state: default is studio-light (NOT generic AI dark mode!)
   const [theme, setTheme] = useState('studio-light');
 
-  // Navigation tab: 'overview' (Landing Page) | 'image_input' (Input map image) | 'simulator' (Interactive tactical board)
-  const [activeTab, setActiveTab] = useState('overview');
-
-  // Preset state
-  const [selectedPreset, setSelectedPreset] = useState('pochinki');
+  // Navigation tab: 'simulator' (Interactive tactical map) | 'image_input' (Upload screenshot)
+  const [activeTab, setActiveTab] = useState('simulator');
 
   // Flight Path Vector (Meters: 0 to 8000)
   const [flightStart, setFlightStart] = useState({ x: 1500, y: 1800 });
@@ -35,7 +29,6 @@ export default function App() {
   // Visual Layer Toggles
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
-  const [showFlightCorridor, setShowFlightCorridor] = useState(true);
   const [showShiftVectors, setShowShiftVectors] = useState(true);
   const [enforceTerrain, setEnforceTerrain] = useState(true);
 
@@ -44,25 +37,10 @@ export default function App() {
 
   const canvasRef = useRef(null);
 
-  // Apply data-theme to HTML root
+  // Apply theme to document root
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
-
-  // Handle Preset Selection
-  const handleSelectPreset = (presetId) => {
-    setSelectedPreset(presetId);
-    if (presetId === 'custom') return;
-
-    const preset = PRESET_SCENARIOS.find((p) => p.id === presetId);
-    if (preset) {
-      setFlightStart({ x: preset.flight.x1, y: preset.flight.y1 });
-      setFlightEnd({ x: preset.flight.x2, y: preset.flight.y2 });
-      setPhase1Center({ x: preset.phase1.x, y: preset.phase1.y });
-      setPhase1Radius(preset.phase1.r);
-      setActivePhase(null);
-    }
-  };
 
   // Run Sequential Prediction Engine
   const predictionResult = useMemo(() => {
@@ -75,77 +53,48 @@ export default function App() {
     });
   }, [flightStart, flightEnd, phase1Center, phase1Radius, enforceTerrain]);
 
-  const { phases, flightPath, latencyMs } = predictionResult;
+  const { phases, flightPath } = predictionResult;
 
-  // Handlers for interactive map manipulations
+  // Handlers for interactive canvas editing
   const handleUpdatePhase1Center = (newX, newY) => {
-    setSelectedPreset('custom');
     setPhase1Center({ x: newX, y: newY });
   };
 
   const handleUpdateFlightPath = ({ start, end }) => {
-    setSelectedPreset('custom');
     setFlightStart(start);
     setFlightEnd(end);
   };
 
   const handlePhase1Change = (newX, newY, newR) => {
-    setSelectedPreset('custom');
     setPhase1Center({ x: newX, y: newY });
     setPhase1Radius(newR);
   };
 
   const handleFlightChange = ({ start, end }) => {
-    setSelectedPreset('custom');
     setFlightStart(start);
     setFlightEnd(end);
   };
 
-  const handleResetView = () => {
-    // Reset view triggered in TacticalCanvas
-  };
-
-  // Export tactical snapshot as PNG
-  const handleExportImage = () => {
-    if (!canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const link = document.createElement('a');
-    link.download = `RunForZone_TacticalBrief_${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  };
-
   return (
     <div className="app-container">
-      {/* Top Studio Broadcast Header */}
+      {/* Top Header */}
       <Header
         theme={theme}
         setTheme={setTheme}
-        selectedPreset={selectedPreset}
-        onSelectPreset={handleSelectPreset}
-        latencyMs={latencyMs}
-        onResetView={handleResetView}
-        onExportImage={handleExportImage}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
       />
 
       {/* Main Workspace Layout */}
       <main className="main-content">
-        {activeTab === 'overview' ? (
-          /* Premium Landing Page */
-          <LandingPage
-            onLaunchStudio={() => setActiveTab('simulator')}
-            onLaunchImagePredictor={() => setActiveTab('image_input')}
-          />
-        ) : activeTab === 'image_input' ? (
-          /* User Input Map Image Mode */
+        {activeTab === 'image_input' ? (
+          /* Match Map Screenshot Mode */
           <ImageMapPredictor />
         ) : (
-          /* Interactive Simulator Board Mode */
+          /* Interactive Tactical Map Mode */
           <>
             <div className="tactical-workspace-grid">
-              {/* LEFT: Tactical Map Canvas & Scrubber */}
+              {/* LEFT: Map Canvas & Timeline Scrubber */}
               <section className="map-column">
                 <TacticalCanvas
                   phases={phases}
@@ -153,7 +102,7 @@ export default function App() {
                   activePhase={activePhase}
                   showHeatmap={showHeatmap}
                   showGrid={showGrid}
-                  showFlightCorridor={showFlightCorridor}
+                  showFlightCorridor={true}
                   showShiftVectors={showShiftVectors}
                   onUpdatePhase1Center={handleUpdatePhase1Center}
                   onUpdateFlightPath={handleUpdateFlightPath}
@@ -166,7 +115,7 @@ export default function App() {
                 />
               </section>
 
-              {/* RIGHT: Flight & Mission Parameters Deck */}
+              {/* RIGHT: Flight & Circle Controls */}
               <aside className="controls-column">
                 <FlightControlPanel
                   flightStart={flightStart}
@@ -177,8 +126,6 @@ export default function App() {
                   setShowHeatmap={setShowHeatmap}
                   showGrid={showGrid}
                   setShowGrid={setShowGrid}
-                  showFlightCorridor={showFlightCorridor}
-                  setShowFlightCorridor={setShowFlightCorridor}
                   showShiftVectors={showShiftVectors}
                   setShowShiftVectors={setShowShiftVectors}
                   enforceTerrain={enforceTerrain}
@@ -189,30 +136,30 @@ export default function App() {
               </aside>
             </div>
 
-            {/* BOTTOM SECTION: Telemetry Matrix & Coach Briefing */}
+            {/* Rotation Advisory & Stage Breakdown */}
             <section className="analytics-section">
+              <TacticalBriefing
+                phases={phases}
+                flightPath={flightPath}
+              />
+
               <TelemetryMatrix
                 phases={phases}
                 activePhase={activePhase}
                 setActivePhase={setActivePhase}
-              />
-
-              <TacticalBriefing
-                phases={phases}
-                flightPath={flightPath}
               />
             </section>
           </>
         )}
       </main>
 
-      {/* Footer */}
+      {/* Clean Utility Footer */}
       <footer className="tactical-footer">
         <div className="footer-left">
           <span>RUNFORZONE • Safe Zone Predictor</span>
         </div>
         <div className="footer-right">
-          <span>Stages 1 to 5</span>
+          <span>Competitive Erangel (8x8 km)</span>
         </div>
       </footer>
     </div>

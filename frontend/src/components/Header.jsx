@@ -3,83 +3,49 @@ import {
   Crosshair, 
   Sun, 
   Moon, 
-  Compass,
-  Upload,
-  Layers,
-  Map
+  Upload, 
+  Map 
 } from 'lucide-react';
-import { PRESET_SCENARIOS } from '../utils/engine';
 
 export default function Header({
   theme,
   setTheme,
-  selectedPreset,
-  onSelectPreset,
   activeTab,
   setActiveTab
 }) {
   return (
     <header className="tactical-header">
       <div className="header-left">
-        <div className="brand-lockup" onClick={() => setActiveTab('overview')} style={{ cursor: 'pointer' }}>
+        <div className="brand-lockup" onClick={() => setActiveTab('simulator')} style={{ cursor: 'pointer' }}>
           <div className="brand-icon-wrapper">
-            <Crosshair className="brand-icon" size={18} />
+            <Crosshair className="brand-icon" size={17} />
           </div>
           <div className="brand-text">
             <span className="brand-title">RUNFORZONE</span>
-            <span className="brand-subtitle">Zone Predictor</span>
+            <span className="brand-subtitle">Safe Zone Predictor</span>
           </div>
         </div>
 
         {/* Navigation Tabs */}
         <div className="nav-tabs">
           <button
-            className={`nav-tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
+            className={`nav-tab-btn ${activeTab === 'simulator' ? 'active' : ''}`}
+            onClick={() => setActiveTab('simulator')}
           >
-            <span>Overview</span>
+            <Map size={13} />
+            <span>Interactive Map</span>
           </button>
           <button
             className={`nav-tab-btn ${activeTab === 'image_input' ? 'active' : ''}`}
             onClick={() => setActiveTab('image_input')}
           >
             <Upload size={13} />
-            <span>Upload Map</span>
-          </button>
-          <button
-            className={`nav-tab-btn ${activeTab === 'simulator' ? 'active' : ''}`}
-            onClick={() => setActiveTab('simulator')}
-          >
-            <Map size={13} />
-            <span>Simulator</span>
+            <span>Upload Screenshot</span>
           </button>
         </div>
       </div>
 
       <div className="header-right">
-        {/* Preset Selector (shown when in simulator) */}
-        {activeTab === 'simulator' && (
-          <div className="preset-selector-group">
-            <label className="preset-label" htmlFor="preset-select">
-              <Compass size={13} />
-              <span>Preset:</span>
-            </label>
-            <select
-              id="preset-select"
-              className="preset-select"
-              value={selectedPreset}
-              onChange={(e) => onSelectPreset(e.target.value)}
-            >
-              <option value="custom">Custom</option>
-              {PRESET_SCENARIOS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         {/* Theme Toggle */}
         <button
           className="theme-toggle-btn"
@@ -98,10 +64,6 @@ export default function Header({
           padding: 12px 24px;
           background: var(--bg-surface);
           border-bottom: 1px solid var(--border-subtle);
-          position: sticky;
-          top: 0;
-          z-index: 50;
-          gap: 16px;
         }
 
         .header-left {
@@ -114,18 +76,17 @@ export default function Header({
           display: flex;
           align-items: center;
           gap: 10px;
-          user-select: none;
         }
 
         .brand-icon-wrapper {
-          width: 32px;
-          height: 32px;
-          border-radius: var(--radius-sm);
-          background: #2563eb;
           display: flex;
           align-items: center;
           justify-content: center;
+          width: 32px;
+          height: 32px;
+          background: #2563eb;
           color: #ffffff;
+          border-radius: var(--radius-sm);
         }
 
         .brand-text {
@@ -136,15 +97,14 @@ export default function Header({
         .brand-title {
           font-weight: 800;
           font-size: 14px;
-          letter-spacing: 0.04em;
+          letter-spacing: 0.05em;
           color: var(--text-primary);
-          line-height: 1.2;
         }
 
         .brand-subtitle {
           font-size: 11px;
           color: var(--text-muted);
-          line-height: 1.2;
+          font-weight: 500;
         }
 
         .nav-tabs {
@@ -161,12 +121,12 @@ export default function Header({
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 6px 14px;
+          padding: 6px 12px;
+          border-radius: 4px;
           font-size: 12px;
           font-weight: 600;
           color: var(--text-secondary);
           background: transparent;
-          border-radius: 4px;
           transition: all 0.15s ease;
         }
 
@@ -176,77 +136,32 @@ export default function Header({
 
         .nav-tab-btn.active {
           background: var(--bg-surface);
-          color: #2563eb;
-          box-shadow: var(--shadow-sm);
+          color: var(--text-primary);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         }
 
         .header-right {
           display: flex;
           align-items: center;
-          gap: 12px;
-        }
-
-        .preset-selector-group {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          background: var(--bg-surface-subtle);
-          padding: 4px 10px;
-          border-radius: var(--radius-sm);
-          border: 1px solid var(--border-subtle);
-        }
-
-        .preset-label {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--text-muted);
-        }
-
-        .preset-select {
-          border: none;
-          background: transparent;
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--text-primary);
-          outline: none;
-          padding: 2px;
+          gap: 10px;
         }
 
         .theme-toggle-btn {
-          width: 32px;
-          height: 32px;
           display: flex;
           align-items: center;
           justify-content: center;
+          width: 34px;
+          height: 34px;
           border-radius: var(--radius-sm);
           background: var(--bg-surface-subtle);
           border: 1px solid var(--border-subtle);
           color: var(--text-secondary);
+          transition: all 0.15s ease;
         }
 
         .theme-toggle-btn:hover {
           background: var(--bg-hover);
           color: var(--text-primary);
-        }
-
-        @media (max-width: 768px) {
-          .tactical-header {
-            flex-direction: column;
-            align-items: stretch;
-            padding: 10px 14px;
-          }
-          .header-left {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 10px;
-          }
-          .nav-tabs {
-            width: 100%;
-            justify-content: space-between;
-          }
         }
       `}</style>
     </header>
