@@ -16,7 +16,7 @@ A high-performance machine learning and data-science analytics engine designed f
 
 ---
 
-## 🏗️ System Architecture
+## 🏗️ System Architecture 
 
 The engine coordinates data ingestion, polar coordinate feature engineering, XGBoost shift regression, mathematical circle containment, and OpenCV terrain topology filtering.
 
