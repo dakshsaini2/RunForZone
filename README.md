@@ -6,7 +6,7 @@
 [![Inference SLA](https://img.shields.io/badge/Inference%20SLA-%3C15ms%20(Target%20%3C500ms)-brightgreen.svg)]()
 [![Compliance](https://img.shields.io/badge/Compliance-Offline%20VOD%20Only-lightgrey.svg)]()
 
-A high-performance machine learning and data-science analytics engine designed for **esports tactical coaches, In-Game Leaders (IGLs), and match analysts** studying sequential Battle Royale safe zone shifts (Phases 1 through 5+) on Erangel.
+A high-performance machine learning and data-science analytics engine designed for **esports tactical coaches, In-Game Leaders (IGLs), and match analysts** studying sequential Battle  Royale safe zone shifts (Phases 1 through 5+) on Erangel.
 
 ---
 
