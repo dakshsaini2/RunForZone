@@ -1,5 +1,6 @@
 {
-  "engine_version": "1.0.0",
+  "engine_version": "2.0.0",
+  "pipeline": "train_on_tournaments.py",
   "units_per_meter": 100.0,
   "feature_columns": [
     "curr_x",
@@ -25,80 +26,150 @@
     "prev_relative_flight_angle"
   ],
   "model_hyperparameters": {
-    "n_estimators": 300,
-    "learning_rate": 0.03,
+    "n_estimators": 400,
+    "learning_rate": 0.025,
     "max_depth": 6,
     "subsample": 0.85,
-    "colsample_bytree": 0.85
+    "colsample_bytree": 0.85,
+    "min_child_weight": 3,
+    "reg_alpha": 1.5,
+    "reg_lambda": 3.0,
+    "gamma": 0.1
+  },
+  "dataset_stats": {
+    "total_matches": 200,
+    "train_matches": 160,
+    "test_matches": 40,
+    "total_transitions": 800,
+    "train_transitions": 640,
+    "test_transitions": 160
   },
   "phase_transitions": {
     "phase_1_to_2": {
       "phase": 1,
-      "samples": 100,
+      "samples": 160,
+      "unique_matches": 160,
+      "cv_folds": 5,
       "metrics": {
-        "oof_distance_mae_meters": 197.06633459008987,
-        "oof_distance_rmse_meters": 233.32022906545558,
-        "oof_angle_mae_deg": 68.09659941284046,
-        "oof_euclidean_mae_meters": 531.9682652134089,
-        "oof_euclidean_p90_meters": 833.4278872028015
+        "oof_distance_mae_meters": 201.3739085121911,
+        "oof_distance_rmse_meters": 237.15016614385655,
+        "oof_angle_mae_deg": 67.30324164463674,
+        "oof_euclidean_mae_meters": 540.9557799660522,
+        "oof_euclidean_p50_meters": 476.52501009079697,
+        "oof_euclidean_p90_meters": 908.2747888960353
       },
       "artifacts": {
         "dist_model": "xgb_phase_1_dist.json",
         "angle_model": "xgb_phase_1_angle.json",
         "dx_model": "xgb_phase_1_dx.json",
-        "dy_model": "xgb_phase_1_dy.json"
+        "dy_model": "xgb_phase_1_dy.json",
+        "dx_pkl": "xgb_phase_1_dx.pkl",
+        "dy_pkl": "xgb_phase_1_dy.pkl",
+        "scaler": "scaler_phase_1.pkl"
       }
     },
     "phase_2_to_3": {
       "phase": 2,
-      "samples": 100,
+      "samples": 160,
+      "unique_matches": 160,
+      "cv_folds": 5,
       "metrics": {
-        "oof_distance_mae_meters": 88.19762311143754,
-        "oof_distance_rmse_meters": 103.27528169693534,
-        "oof_angle_mae_deg": 88.64971949924998,
-        "oof_euclidean_mae_meters": 322.8541035039485,
-        "oof_euclidean_p90_meters": 529.8577717347549
+        "oof_distance_mae_meters": 90.92841603997658,
+        "oof_distance_rmse_meters": 106.61813654724843,
+        "oof_angle_mae_deg": 71.10066444959507,
+        "oof_euclidean_mae_meters": 274.9614350323721,
+        "oof_euclidean_p50_meters": 257.52435928439326,
+        "oof_euclidean_p90_meters": 492.5225000979909
       },
       "artifacts": {
         "dist_model": "xgb_phase_2_dist.json",
         "angle_model": "xgb_phase_2_angle.json",
         "dx_model": "xgb_phase_2_dx.json",
-        "dy_model": "xgb_phase_2_dy.json"
+        "dy_model": "xgb_phase_2_dy.json",
+        "dx_pkl": "xgb_phase_2_dx.pkl",
+        "dy_pkl": "xgb_phase_2_dy.pkl",
+        "scaler": "scaler_phase_2.pkl"
       }
     },
     "phase_3_to_4": {
       "phase": 3,
-      "samples": 100,
+      "samples": 160,
+      "unique_matches": 160,
+      "cv_folds": 5,
       "metrics": {
-        "oof_distance_mae_meters": 67.53941820537523,
-        "oof_distance_rmse_meters": 80.25357400503862,
-        "oof_angle_mae_deg": 78.47994475404981,
-        "oof_euclidean_mae_meters": 218.1035612984414,
-        "oof_euclidean_p90_meters": 379.1629227854297
+        "oof_distance_mae_meters": 64.33301292395296,
+        "oof_distance_rmse_meters": 76.2791165732559,
+        "oof_angle_mae_deg": 88.88820250897238,
+        "oof_euclidean_mae_meters": 229.7569361957469,
+        "oof_euclidean_p50_meters": 219.65140465509967,
+        "oof_euclidean_p90_meters": 380.76946278048416
       },
       "artifacts": {
         "dist_model": "xgb_phase_3_dist.json",
         "angle_model": "xgb_phase_3_angle.json",
         "dx_model": "xgb_phase_3_dx.json",
-        "dy_model": "xgb_phase_3_dy.json"
+        "dy_model": "xgb_phase_3_dy.json",
+        "dx_pkl": "xgb_phase_3_dx.pkl",
+        "dy_pkl": "xgb_phase_3_dy.pkl",
+        "scaler": "scaler_phase_3.pkl"
       }
     },
     "phase_4_to_5": {
       "phase": 4,
-      "samples": 100,
+      "samples": 160,
+      "unique_matches": 160,
+      "cv_folds": 5,
       "metrics": {
-        "oof_distance_mae_meters": 37.9778915704819,
-        "oof_distance_rmse_meters": 45.01687853842944,
-        "oof_angle_mae_deg": 78.91191286886729,
-        "oof_euclidean_mae_meters": 116.41384869787342,
-        "oof_euclidean_p90_meters": 193.984469660071
+        "oof_distance_mae_meters": 31.751947268524294,
+        "oof_distance_rmse_meters": 37.94485376358438,
+        "oof_angle_mae_deg": 80.89930604192173,
+        "oof_euclidean_mae_meters": 120.29290884164311,
+        "oof_euclidean_p50_meters": 114.99349101276042,
+        "oof_euclidean_p90_meters": 205.14803843314567
       },
       "artifacts": {
         "dist_model": "xgb_phase_4_dist.json",
         "angle_model": "xgb_phase_4_angle.json",
         "dx_model": "xgb_phase_4_dx.json",
-        "dy_model": "xgb_phase_4_dy.json"
+        "dy_model": "xgb_phase_4_dy.json",
+        "dx_pkl": "xgb_phase_4_dx.pkl",
+        "dy_pkl": "xgb_phase_4_dy.pkl",
+        "scaler": "scaler_phase_4.pkl"
       }
+    }
+  },
+  "test_evaluation": {
+    "phase_1_to_2": {
+      "n_test_samples": 40,
+      "test_distance_mae_meters": 154.18916776780028,
+      "test_angle_mae_deg": 53.857962008467894,
+      "test_euclidean_mae_meters": 422.8202524917242,
+      "test_euclidean_p50_meters": 371.85592767509837,
+      "test_euclidean_p90_meters": 747.0206233682002
+    },
+    "phase_2_to_3": {
+      "n_test_samples": 40,
+      "test_distance_mae_meters": 91.08465083501989,
+      "test_angle_mae_deg": 85.47213382109501,
+      "test_euclidean_mae_meters": 322.77050679645885,
+      "test_euclidean_p50_meters": 285.6330366344374,
+      "test_euclidean_p90_meters": 563.9815706424358
+    },
+    "phase_3_to_4": {
+      "n_test_samples": 40,
+      "test_distance_mae_meters": 57.54227842613446,
+      "test_angle_mae_deg": 78.1333405992663,
+      "test_euclidean_mae_meters": 218.42022038386523,
+      "test_euclidean_p50_meters": 189.89085266405039,
+      "test_euclidean_p90_meters": 366.51615511822024
+    },
+    "phase_4_to_5": {
+      "n_test_samples": 40,
+      "test_distance_mae_meters": 33.19161187231986,
+      "test_angle_mae_deg": 87.78048064039885,
+      "test_euclidean_mae_meters": 123.90736287134068,
+      "test_euclidean_p50_meters": 123.19197077340495,
+      "test_euclidean_p90_meters": 214.8986855437887
     }
   }
 }
