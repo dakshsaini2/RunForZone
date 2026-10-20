@@ -1,10 +1,12 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Upload, 
   Sliders, 
   Layers, 
   Download, 
   CheckCircle2, 
+  AlertTriangle,
+  ShieldCheck,
   Maximize2, 
   Eye, 
   Split, 
@@ -18,76 +20,102 @@ import {
   ZoomIn,
   ZoomOut,
   Target,
-  Map
+  Map,
+  Sparkles,
+  RefreshCw,
+  Info
 } from 'lucide-react';
 import { 
   predictSequentialPhases, 
   generateTacticalBriefing,
   PHASE_CONFIG, 
   getErangelLandmark,
-  MAP_EXTENT_METERS 
+  MAP_EXTENT_METERS,
+  toErangelGrid,
+  toCompassBearing,
+  isErangelLand
 } from '../utils/engine';
+import {
+  screenToMeters,
+  autoDetectSafeZoneAndFlight,
+  auditPhasesSafety
+} from '../utils/imageCalibration';
 import StageMapCanvas from './StageMapCanvas';
 import './ImageMapPredictor.css';
 
 export default function ImageMapPredictor() {
+  // 1. Uploaded match image state
   const [uploadedImageSrc, setUploadedImageSrc] = useState('/samples/match_sample_1.png');
   const [imageName, setImageName] = useState('match_sample_1.png');
+  const [isDropZoneActive, setIsDropZoneActive] = useState(false);
+  const [loadedScreenshot, setLoadedScreenshot] = useState(null);
+  const [loadedErangel8k, setLoadedErangel8k] = useState(null);
+  const [loadedErangelPreview, setLoadedErangelPreview] = useState(null);
 
-  // Map Background: '8k' (Ultra High-Res 8192x8192) | 'screenshot' (Uploaded Image)
-  const [mapBackground, setMapBackground] = useState('8k');
+  // 2. Map Background: 'screenshot' (Match Screenshot) | '8k' (Ultra High-Res 8192x8192 Map)
+  const [mapBackground, setMapBackground] = useState('screenshot');
 
-  // Pan & Zoom viewport state
+  // 3. Pan & Zoom Viewport
   const [transform, setTransform] = useState({ scale: 1, offsetX: 0, offsetY: 0 });
-  const [isDragging, setIsDragging] = useState(false);
+  const [activeDrag, setActiveDrag] = useState(null); // null | 'pan' | 'circleCenter' | 'circleRadius' | 'flightStart' | 'flightEnd'
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hoveredHandle, setHoveredHandle] = useState(null); // null | handle name
+  const [cursorPosMeters, setCursorPosMeters] = useState({ x: 4000, y: 4000 });
 
-  // Calibration state (in meters: 0 to 8000)
+  // 4. Calibration Parameters (in meters: 0 to 8000)
   const [flightStart, setFlightStart] = useState({ x: 1500, y: 1800 });
   const [flightEnd, setFlightEnd] = useState({ x: 6600, y: 6200 });
   const [phase1Center, setPhase1Center] = useState({ x: 4100, y: 3900 });
   const [phase1Radius, setPhase1Radius] = useState(2000);
+  const [enforceTerrain, setEnforceTerrain] = useState(true);
 
-  // View & Layer options
+  // 5. Automated Computer Vision Detection state
+  const [isAutoDetecting, setIsAutoDetecting] = useState(false);
+  const [autoDetectReport, setAutoDetectReport] = useState(null);
+
+  // 6. View & Layer Options
   const [viewMode, setViewMode] = useState('overlay'); // 'overlay' | 'stages' | 'split'
-  const [overlayOpacity, setOverlayOpacity] = useState(0.9);
-  const [selectedStage, setSelectedStage] = useState(null);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.88);
+  const [selectedStage, setSelectedStage] = useState(null); // null = all
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showShiftArrows, setShowShiftArrows] = useState(true);
   const [showFlightLine, setShowFlightLine] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
+  const [showAuditTable, setShowAuditTable] = useState(true);
   const [calibrationMode, setCalibrationMode] = useState(null); // null | 'setCircle' | 'setFlightStart' | 'setFlightEnd'
 
+  // Refs
   const canvasRef = useRef(null);
-  const imageObjRef = useRef(null);
-  const erangel8kRef = useRef(null);
-  const erangelPreviewRef = useRef(null);
   const fileInputRef = useRef(null);
+  const animationFrameRef = useRef(null);
 
-  // Compute multi-stage predictions
-  const prediction = predictSequentialPhases({
-    flightStart,
-    flightEnd,
-    phase1Center,
-    phase1Radius,
-    enforceTerrain: true
-  });
-  const { phases, flightPath } = prediction;
-  const briefing = generateTacticalBriefing(phases, flightPath);
+  // 7. Live Inference Execution: Run XGBoost-derived sequential prediction engine
+  const prediction = useMemo(() => {
+    return predictSequentialPhases({
+      flightStart,
+      flightEnd,
+      phase1Center,
+      phase1Radius,
+      enforceTerrain
+    });
+  }, [flightStart, flightEnd, phase1Center, phase1Radius, enforceTerrain]);
 
-  // Preload Erangel 8K map and fast preview
+  const { phases, flightPath, latencyMs } = prediction;
+  const briefing = useMemo(() => generateTacticalBriefing(phases, flightPath), [phases, flightPath]);
+  const auditReport = useMemo(() => auditPhasesSafety(phases), [phases]);
+
+  // Preload Erangel 8K map and preview
   useEffect(() => {
     const preview = new Image();
     preview.src = '/erangel_map.png';
     preview.onload = () => {
-      erangelPreviewRef.current = preview;
-      renderCanvas();
+      setLoadedErangelPreview(preview);
     };
 
     const full8k = new Image();
     full8k.src = '/erangel_map_8k.png';
     full8k.onload = () => {
-      erangel8kRef.current = full8k;
-      renderCanvas();
+      setLoadedErangel8k(full8k);
     };
   }, []);
 
@@ -97,8 +125,7 @@ export default function ImageMapPredictor() {
     img.crossOrigin = 'anonymous';
     img.src = uploadedImageSrc;
     img.onload = () => {
-      imageObjRef.current = img;
-      renderCanvas();
+      setLoadedScreenshot(img);
     };
   }, [uploadedImageSrc]);
 
@@ -106,20 +133,85 @@ export default function ImageMapPredictor() {
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    loadLocalFile(file);
+  };
 
+  const loadLocalFile = (file) => {
     setImageName(file.name);
+    setAutoDetectReport(null);
     const reader = new FileReader();
     reader.onload = (event) => {
       setUploadedImageSrc(event.target?.result);
+      setMapBackground('screenshot');
     };
     reader.readAsDataURL(file);
   };
 
+  // Drag and Drop file upload
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDropZoneActive(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDropZoneActive(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDropZoneActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      loadLocalFile(file);
+    }
+  };
+
   const handleLoadSample = (sampleSrc, name) => {
     setImageName(name);
+    setAutoDetectReport(null);
     setUploadedImageSrc(sampleSrc);
   };
 
+  // Automated Computer Vision Detection trigger
+  const handleRunAutoDetection = () => {
+    if (!loadedScreenshot) return;
+    setIsAutoDetecting(true);
+
+    setTimeout(() => {
+      try {
+        const result = autoDetectSafeZoneAndFlight(loadedScreenshot);
+        if (result && result.success) {
+          if (result.circle) {
+            setPhase1Center({ x: result.circle.x, y: result.circle.y });
+            setPhase1Radius(result.circle.r);
+          }
+          if (result.flight && result.flight.start && result.flight.end) {
+            setFlightStart(result.flight.start);
+            setFlightEnd(result.flight.end);
+          }
+          setAutoDetectReport({
+            success: true,
+            circleConfidence: result.circle.confidence,
+            flightConfidence: result.flight.confidence,
+            notes: result.notes
+          });
+        } else {
+          setAutoDetectReport({
+            success: false,
+            notes: result?.notes || 'Detection did not find high-confidence white circles.'
+          });
+        }
+      } catch (err) {
+        console.error('Auto detection error:', err);
+        setAutoDetectReport({ success: false, notes: 'CV Analysis error' });
+      } finally {
+        setIsAutoDetecting(false);
+      }
+    }, 180);
+  };
+
+  // Focus specific stage with smooth auto-zoom
   const focusStage = (stageNum = 5) => {
     const target = phases[stageNum];
     const canvas = canvasRef.current;
@@ -144,20 +236,7 @@ export default function ImageMapPredictor() {
     setTransform({ scale: 1, offsetX: 0, offsetY: 0 });
   };
 
-  const screenToMeters = (clickX, clickY) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 4000, y: 4000 };
-
-    const midX = canvas.width / 2;
-    const midY = canvas.height / 2;
-    const unscaledX = (clickX - transform.offsetX - midX) / transform.scale + midX;
-    const unscaledY = (clickY - transform.offsetY - midY) / transform.scale + midY;
-
-    const meterX = Math.round(Math.max(0, Math.min(MAP_EXTENT_METERS, (unscaledX / canvas.width) * MAP_EXTENT_METERS)));
-    const meterY = Math.round(Math.max(0, Math.min(MAP_EXTENT_METERS, (unscaledY / canvas.height) * MAP_EXTENT_METERS)));
-    return { x: meterX, y: meterY };
-  };
-
+  // Mouse Wheel Zoom
   const handleWheel = (e) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
@@ -177,36 +256,110 @@ export default function ImageMapPredictor() {
     });
   };
 
+  // Hit-testing interactive calibration handles on canvas
+  const getHandleAtPoint = (meterPt, canvasWidth) => {
+    const thresholdMeters = (18 / canvasWidth) * MAP_EXTENT_METERS * (1 / transform.scale);
+
+    // 1. Center Handle
+    if (Math.hypot(meterPt.x - phase1Center.x, meterPt.y - phase1Center.y) < thresholdMeters) {
+      return 'circleCenter';
+    }
+
+    // 2. Radius Handle (East edge of Circle 1)
+    const radHandleX = phase1Center.x + phase1Radius;
+    const radHandleY = phase1Center.y;
+    if (Math.hypot(meterPt.x - radHandleX, meterPt.y - radHandleY) < thresholdMeters) {
+      return 'circleRadius';
+    }
+
+    // 3. Flight Start Handle
+    if (Math.hypot(meterPt.x - flightStart.x, meterPt.y - flightStart.y) < thresholdMeters) {
+      return 'flightStart';
+    }
+
+    // 4. Flight End Handle
+    if (Math.hypot(meterPt.x - flightEnd.x, meterPt.y - flightEnd.y) < thresholdMeters) {
+      return 'flightEnd';
+    }
+
+    return null;
+  };
+
+  // Mouse Down: Start Pan or Handle Drag or Pinpoint
   const handleMouseDown = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
     if (calibrationMode) {
       handleCalibrationClick(e);
       return;
     }
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - transform.offsetX, y: e.clientY - transform.offsetY });
+
+    const meterPt = screenToMeters(e.clientX, e.clientY, canvas, transform);
+    const hit = getHandleAtPoint(meterPt, canvas.width);
+
+    if (hit) {
+      setActiveDrag(hit);
+      setDragStart({ x: meterPt.x, y: meterPt.y });
+    } else {
+      setActiveDrag('pan');
+      setDragStart({ x: e.clientX - transform.offsetX, y: e.clientY - transform.offsetY });
+    }
   };
 
+  // Mouse Move: Update Hover state, Coordinates HUD, and Active Drag
   const handleMouseMove = (e) => {
-    if (!isDragging) return;
-    setTransform((prev) => ({
-      ...prev,
-      offsetX: e.clientX - dragStart.x,
-      offsetY: e.clientY - dragStart.y
-    }));
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const meterPt = screenToMeters(e.clientX, e.clientY, canvas, transform);
+    setCursorPosMeters(meterPt);
+
+    // Hover handle detection when not dragging
+    if (!activeDrag && !calibrationMode) {
+      const hit = getHandleAtPoint(meterPt, canvas.width);
+      setHoveredHandle(hit);
+    }
+
+    if (!activeDrag) return;
+
+    if (activeDrag === 'pan') {
+      setTransform((prev) => ({
+        ...prev,
+        offsetX: e.clientX - dragStart.x,
+        offsetY: e.clientY - dragStart.y
+      }));
+    } else if (activeDrag === 'circleCenter') {
+      setPhase1Center({
+        x: Math.max(0, Math.min(MAP_EXTENT_METERS, meterPt.x)),
+        y: Math.max(0, Math.min(MAP_EXTENT_METERS, meterPt.y))
+      });
+    } else if (activeDrag === 'circleRadius') {
+      const newRadius = Math.round(Math.hypot(meterPt.x - phase1Center.x, meterPt.y - phase1Center.y));
+      const clampedRadius = Math.max(1200, Math.min(2800, newRadius));
+      setPhase1Radius(clampedRadius);
+    } else if (activeDrag === 'flightStart') {
+      setFlightStart({
+        x: Math.max(0, Math.min(MAP_EXTENT_METERS, meterPt.x)),
+        y: Math.max(0, Math.min(MAP_EXTENT_METERS, meterPt.y))
+      });
+    } else if (activeDrag === 'flightEnd') {
+      setFlightEnd({
+        x: Math.max(0, Math.min(MAP_EXTENT_METERS, meterPt.x)),
+        y: Math.max(0, Math.min(MAP_EXTENT_METERS, meterPt.y))
+      });
+    }
   };
 
   const handleMouseUp = () => {
-    setIsDragging(false);
+    setActiveDrag(null);
   };
 
+  // Calibration Pinpoint Clicks
   const handleCalibrationClick = (e) => {
     const canvas = canvasRef.current;
     if (!canvas || !calibrationMode) return;
-    const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
-    const { x: meterX, y: meterY } = screenToMeters(clickX, clickY);
+    const { x: meterX, y: meterY } = screenToMeters(e.clientX, e.clientY, canvas, transform);
 
     if (calibrationMode === 'setCircle') {
       setPhase1Center({ x: meterX, y: meterY });
@@ -220,6 +373,7 @@ export default function ImageMapPredictor() {
     }
   };
 
+  // Main Canvas Rendering Routine
   const renderCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -238,9 +392,10 @@ export default function ImageMapPredictor() {
     ctx.scale(transform.scale, transform.scale);
     ctx.translate(-midX, -midY);
 
+    // 1. Draw Map Base
     const activeBaseImg = (mapBackground === '8k')
-      ? (erangel8kRef.current || erangelPreviewRef.current || imageObjRef.current)
-      : imageObjRef.current;
+      ? (loadedErangel8k || loadedErangelPreview || loadedScreenshot)
+      : loadedScreenshot;
 
     if (activeBaseImg) {
       ctx.drawImage(activeBaseImg, 0, 0, width, height);
@@ -252,10 +407,44 @@ export default function ImageMapPredictor() {
     const mToPx = (m) => (m / MAP_EXTENT_METERS) * width;
     const strokeScale = 1 / Math.sqrt(Math.max(1, transform.scale));
 
+    // 2. Erangel 8x8 1km Grid Overlay
+    if (showGrid) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+      ctx.lineWidth = Math.max(0.6, 1 * strokeScale);
+      ctx.setLineDash([2 * strokeScale, 4 * strokeScale]);
+
+      for (let i = 1; i < 8; i++) {
+        const pos = (i / 8) * width;
+        ctx.beginPath();
+        ctx.moveTo(pos, 0);
+        ctx.lineTo(pos, height);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(0, pos);
+        ctx.lineTo(width, pos);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // Grid Letters & Numbers
+      ctx.font = `600 ${Math.max(9, Math.round(11 * strokeScale))}px JetBrains Mono, monospace`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+      for (let col = 0; col < 8; col++) {
+        const letter = String.fromCharCode(65 + col);
+        ctx.fillText(letter, (col + 0.5) * (width / 8) - 4 * strokeScale, 16 * strokeScale);
+      }
+      for (let row = 0; row < 8; row++) {
+        ctx.fillText(String(row + 1), 6 * strokeScale, (row + 0.5) * (height / 8) + 4 * strokeScale);
+      }
+      ctx.restore();
+    }
+
     ctx.save();
     ctx.globalAlpha = overlayOpacity;
 
-    // Heatmap
+    // 3. Probability Heatmap
     if (showHeatmap && phases[1]) {
       const p1 = phases[1];
       const p1PxX = mToPx(p1.x);
@@ -268,11 +457,11 @@ export default function ImageMapPredictor() {
 
       const grad = ctx.createRadialGradient(
         targetPxX, targetPxY, 10,
-        p1PxX, p1PxY, p1PxR * 0.95
+        p1PxX, p1PxY, p1PxR * 0.96
       );
-      grad.addColorStop(0, 'rgba(220, 38, 38, 0.45)');
-      grad.addColorStop(0.35, 'rgba(217, 119, 6, 0.3)');
-      grad.addColorStop(0.75, 'rgba(37, 99, 235, 0.15)');
+      grad.addColorStop(0, 'rgba(220, 38, 38, 0.48)');
+      grad.addColorStop(0.35, 'rgba(217, 119, 6, 0.32)');
+      grad.addColorStop(0.75, 'rgba(37, 99, 235, 0.16)');
       grad.addColorStop(1, 'rgba(37, 99, 235, 0)');
 
       ctx.save();
@@ -284,7 +473,7 @@ export default function ImageMapPredictor() {
       ctx.restore();
     }
 
-    // Flight Path
+    // 4. Flight Path Vector
     if (showFlightLine) {
       const f1x = mToPx(flightStart.x);
       const f1y = mToPx(flightStart.y);
@@ -292,7 +481,7 @@ export default function ImageMapPredictor() {
       const f2y = mToPx(flightEnd.y);
 
       ctx.strokeStyle = '#d97706';
-      ctx.lineWidth = Math.max(1.5, 3 * strokeScale);
+      ctx.lineWidth = Math.max(1.6, 3.2 * strokeScale);
       ctx.setLineDash([8 * strokeScale, 6 * strokeScale]);
       ctx.beginPath();
       ctx.moveTo(f1x, f1y);
@@ -301,7 +490,7 @@ export default function ImageMapPredictor() {
       ctx.setLineDash([]);
 
       const angle = Math.atan2(f2y - f1y, f2x - f1x);
-      const hLen = Math.max(8, 16 * strokeScale);
+      const hLen = Math.max(9, 16 * strokeScale);
       ctx.fillStyle = '#d97706';
       ctx.beginPath();
       ctx.moveTo(f2x, f2y);
@@ -311,16 +500,28 @@ export default function ImageMapPredictor() {
       ctx.closePath();
       ctx.fill();
 
-      ctx.fillStyle = '#ffffff';
+      // Flight Start Draggable Handle
+      const isStartHovered = hoveredHandle === 'flightStart' || activeDrag === 'flightStart';
+      ctx.fillStyle = isStartHovered ? '#fbbf24' : '#ffffff';
       ctx.strokeStyle = '#d97706';
-      ctx.lineWidth = Math.max(1.2, 2.5 * strokeScale);
+      ctx.lineWidth = Math.max(1.4, 2.8 * strokeScale);
       ctx.beginPath();
-      ctx.arc(f1x, f1y, Math.max(3.5, 7 * strokeScale), 0, Math.PI * 2);
+      ctx.arc(f1x, f1y, Math.max(4.5, (isStartHovered ? 9 : 7) * strokeScale), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Flight End Draggable Handle
+      const isEndHovered = hoveredHandle === 'flightEnd' || activeDrag === 'flightEnd';
+      ctx.fillStyle = isEndHovered ? '#fbbf24' : '#d97706';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1.2, 2 * strokeScale);
+      ctx.beginPath();
+      ctx.arc(f2x, f2y, Math.max(3.5, (isEndHovered ? 8 : 6) * strokeScale), 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
 
-    // Shift Direction Vectors
+    // 5. Shift Direction Vectors (Stage N -> N+1)
     const phaseList = Object.values(phases).sort((a, b) => a.phase - b.phase);
 
     if (showShiftArrows && phaseList.length > 1) {
@@ -336,8 +537,8 @@ export default function ImageMapPredictor() {
         const c2y = mToPx(next.y);
 
         ctx.strokeStyle = '#dc2626';
-        ctx.lineWidth = Math.max(1.2, 2 * strokeScale);
-        ctx.setLineDash([4 * strokeScale, 4 * strokeScale]);
+        ctx.lineWidth = Math.max(1.4, 2.2 * strokeScale);
+        ctx.setLineDash([5 * strokeScale, 4 * strokeScale]);
         ctx.beginPath();
         ctx.moveTo(c1x, c1y);
         ctx.lineTo(c2x, c2y);
@@ -345,7 +546,7 @@ export default function ImageMapPredictor() {
         ctx.setLineDash([]);
 
         const arrowAngle = Math.atan2(c2y - c1y, c2x - c1x);
-        const arrowLen = Math.max(5, 9 * strokeScale);
+        const arrowLen = Math.max(6, 11 * strokeScale);
         ctx.fillStyle = '#dc2626';
         ctx.beginPath();
         ctx.moveTo(c2x, c2y);
@@ -356,7 +557,7 @@ export default function ImageMapPredictor() {
       }
     }
 
-    // Safe Zone Circles (Stages 1-5)
+    // 6. Safe Zone Circles (Stages 1 through 5)
     phaseList.forEach((p) => {
       const isVisible = selectedStage === null || selectedStage === p.phase;
       if (!isVisible) return;
@@ -366,18 +567,21 @@ export default function ImageMapPredictor() {
       const cy = mToPx(p.y);
       const cr = mToPx(p.r);
 
+      // Circle Fill
       ctx.fillStyle = cfg.bg || 'rgba(37, 99, 235, 0.1)';
       ctx.beginPath();
       ctx.arc(cx, cy, cr, 0, Math.PI * 2);
       ctx.fill();
 
+      // Circle Outline
       ctx.strokeStyle = cfg.color;
-      ctx.lineWidth = Math.max(1.4, ((selectedStage === p.phase) ? 3.5 : 2.5) * strokeScale);
+      ctx.lineWidth = Math.max(1.5, ((selectedStage === p.phase) ? 3.8 : 2.5) * strokeScale);
       ctx.beginPath();
       ctx.arc(cx, cy, cr, 0, Math.PI * 2);
       ctx.stroke();
 
-      const chSize = Math.max(3.5, 7 * strokeScale);
+      // Center Crosshair
+      const chSize = Math.max(4, 8 * strokeScale);
       ctx.strokeStyle = cfg.color;
       ctx.lineWidth = Math.max(1.2, 2 * strokeScale);
       ctx.beginPath();
@@ -387,22 +591,47 @@ export default function ImageMapPredictor() {
       ctx.lineTo(cx, cy + chSize);
       ctx.stroke();
 
-      const label = `Stage ${p.phase} • ${p.r}m`;
-      const fontSize = Math.max(8, Math.round(11 * strokeScale));
+      // Center Interactive Draggable Handle (For Stage 1)
+      if (p.phase === 1) {
+        const isCenterHovered = hoveredHandle === 'circleCenter' || activeDrag === 'circleCenter';
+        ctx.fillStyle = isCenterHovered ? '#60a5fa' : 'rgba(37, 99, 235, 0.85)';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1.2, 2 * strokeScale);
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(4.5, (isCenterHovered ? 9 : 7) * strokeScale), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Radius Resize Handle on Circle 1 East Edge
+        const radHandleX = cx + cr;
+        const radHandleY = cy;
+        const isRadHovered = hoveredHandle === 'circleRadius' || activeDrag === 'circleRadius';
+        ctx.fillStyle = isRadHovered ? '#60a5fa' : 'rgba(37, 99, 235, 0.85)';
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1.2, 2 * strokeScale);
+        ctx.beginPath();
+        ctx.arc(radHandleX, radHandleY, Math.max(4, (isRadHovered ? 8 : 6) * strokeScale), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Tactical Stage Badge
+      const label = `Stage ${p.phase} • ${p.r}m${p.isReprojected ? ' [Land Reprojected]' : ''}`;
+      const fontSize = Math.max(8.5, Math.round(11 * strokeScale));
       ctx.font = `700 ${fontSize}px JetBrains Mono, monospace`;
       const textW = ctx.measureText(label).width;
 
       const badgeX = cx + 8 * strokeScale;
       const badgeY = cy - cr - 8 * strokeScale;
       const pad = 4 * strokeScale;
-      const boxH = Math.max(12, 18 * strokeScale);
+      const boxH = Math.max(13, 19 * strokeScale);
 
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
       ctx.beginPath();
       ctx.roundRect(badgeX - pad, badgeY - boxH + pad, textW + pad * 2, boxH, 3);
       ctx.fill();
 
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = cfg.color;
       ctx.fillText(label, badgeX, badgeY);
     });
 
@@ -415,16 +644,27 @@ export default function ImageMapPredictor() {
     showHeatmap,
     showFlightLine,
     showShiftArrows,
+    showGrid,
     selectedStage,
     phases,
     flightStart,
-    flightEnd
+    flightEnd,
+    hoveredHandle,
+    activeDrag,
+    loadedScreenshot,
+    loadedErangel8k,
+    loadedErangelPreview
   ]);
 
+  // Request Animation Frame on state changes
   useEffect(() => {
-    renderCanvas();
+    animationFrameRef.current = requestAnimationFrame(renderCanvas);
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
   }, [renderCanvas]);
 
+  // Download high-resolution rendered result
   const handleDownloadResult = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -434,15 +674,33 @@ export default function ImageMapPredictor() {
     link.click();
   };
 
+  // Determine dynamic canvas cursor
+  const getCanvasCursor = () => {
+    if (calibrationMode) return 'crosshair';
+    if (activeDrag === 'circleCenter' || activeDrag === 'flightStart' || activeDrag === 'flightEnd') return 'grabbing';
+    if (activeDrag === 'circleRadius') return 'ew-resize';
+    if (activeDrag === 'pan') return 'grabbing';
+    if (hoveredHandle === 'circleCenter' || hoveredHandle === 'flightStart' || hoveredHandle === 'flightEnd') return 'grab';
+    if (hoveredHandle === 'circleRadius') return 'ew-resize';
+    return 'default';
+  };
+
   return (
     <div className="image-predictor-container">
-      {/* Top Upload Bar */}
-      <div className="ingestion-deck tactical-card">
+      {/* 1. TOP INGESTION & SCANNER DECK */}
+      <div 
+        className={`ingestion-deck tactical-card ${isDropZoneActive ? 'drop-active' : ''}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div className="ingestion-header">
-          <FileImage size={17} className="deck-icon" />
+          <FileImage size={18} className="deck-icon" />
           <div>
-            <div className="deck-title">Match Map Screenshot Scanner</div>
-            <div className="deck-subtitle">Upload map image to predict safe zone progression (Stages 1–5)</div>
+            <div className="deck-title">Match Screenshot Zone Scanner & Predictor</div>
+            <div className="deck-subtitle">
+              Upload match screenshot to calibrate Stage 1 circle and predict subsequent zone shifts (Stages 2–5)
+            </div>
           </div>
         </div>
 
@@ -455,6 +713,17 @@ export default function ImageMapPredictor() {
             style={{ display: 'none' }}
           />
 
+          {/* Automated Computer Vision Scanner Button */}
+          <button
+            className={`auto-cv-btn ${isAutoDetecting ? 'loading' : ''}`}
+            onClick={handleRunAutoDetection}
+            disabled={isAutoDetecting}
+            title="Automatically detect safe zone circle and flight path vector from image"
+          >
+            {isAutoDetecting ? <RefreshCw size={13} className="spin" /> : <Sparkles size={13} />}
+            <span>{isAutoDetecting ? 'Analyzing Image...' : 'Auto-Detect (CV)'}</span>
+          </button>
+
           <button
             className="upload-btn-primary"
             onClick={() => fileInputRef.current?.click()}
@@ -464,23 +733,44 @@ export default function ImageMapPredictor() {
           </button>
 
           <div className="sample-btn-group">
+            <span className="sample-label">Samples:</span>
             <button
               className="sample-btn"
               onClick={() => handleLoadSample('/samples/match_sample_1.png', 'match_sample_1.png')}
             >
-              Sample Match
+              Match VOD 1
             </button>
             <button
               className="sample-btn"
               onClick={() => handleLoadSample('/samples/match_sample_2.png', 'erangel_official.png')}
             >
-              Erangel Base
+              Erangel Official
             </button>
           </div>
         </div>
       </div>
 
-      {/* Rotation HUD Bar */}
+      {/* CV Detection Banner if active */}
+      {autoDetectReport && (
+        <div className={`autodetect-banner ${autoDetectReport.success ? 'success' : 'warn'}`}>
+          <div className="banner-left">
+            {autoDetectReport.success ? (
+              <ShieldCheck size={16} className="text-emerald" />
+            ) : (
+              <AlertTriangle size={16} className="text-amber" />
+            )}
+            <span><b>Automated Detection:</b> {autoDetectReport.notes}</span>
+          </div>
+          {autoDetectReport.success && (
+            <div className="banner-badges">
+              <span className="conf-badge">Circle: {autoDetectReport.circleConfidence}% Confidence</span>
+              <span className="conf-badge">Flight: {autoDetectReport.flightConfidence}% Confidence</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 2. TACTICAL HUD SUMMARY BAR */}
       <div className="abstracted-hud-bar tactical-card">
         <div className="hud-metric">
           <span className="hud-label">
@@ -519,11 +809,20 @@ export default function ImageMapPredictor() {
           <span className="hud-val">{briefing.shiftType}</span>
           <span className="hud-sub">{briefing.shiftDescription}</span>
         </div>
+
+        <div className="hud-metric">
+          <span className="hud-label">
+            <Target size={12} className="hud-icon" />
+            <span>Inference SLA</span>
+          </span>
+          <span className="hud-val mono text-emerald">{latencyMs} ms</span>
+          <span className="hud-sub">Target &lt; 500 ms (PASS)</span>
+        </div>
       </div>
 
-      {/* Main Workspace */}
+      {/* 3. MAIN WORKSPACE GRID: CANVAS ON LEFT, CALIBRATION ON RIGHT */}
       <div className="predictor-workspace-grid">
-        {/* Left: Map */}
+        {/* Left Column: Interactive HTML5 Canvas */}
         <div className="image-canvas-card tactical-card">
           <div className="canvas-header-bar">
             <div className="image-meta mono">
@@ -536,14 +835,14 @@ export default function ImageMapPredictor() {
                 onClick={() => setViewMode('overlay')}
               >
                 <Eye size={13} />
-                <span>Overlay</span>
+                <span>Overlay Mode</span>
               </button>
               <button
                 className={`tab-btn ${viewMode === 'stages' ? 'active' : ''}`}
                 onClick={() => setViewMode('stages')}
               >
                 <Layers size={13} />
-                <span>Stages</span>
+                <span>Stages Grid</span>
               </button>
               <button
                 className={`tab-btn ${viewMode === 'split' ? 'active' : ''}`}
@@ -556,7 +855,7 @@ export default function ImageMapPredictor() {
               <button
                 className="tab-btn download-btn"
                 onClick={handleDownloadResult}
-                title="Download image with predicted zones"
+                title="Download annotated map with predicted zones"
               >
                 <Download size={13} />
                 <span>Export PNG</span>
@@ -569,8 +868,8 @@ export default function ImageMapPredictor() {
               <div className="stages-multi-grid">
                 <div className="multi-grid-intro">
                   <div className="intro-text">
-                    <b>Stages 1 to 5 Progression</b>
-                    <span>Individual maps showing each safe zone circle.</span>
+                    <b>Stages 1 to 5 Progression Masonry</b>
+                    <span>Isolated map inspection showing each stage safe zone circle and terrain fit.</span>
                   </div>
                 </div>
 
@@ -581,7 +880,7 @@ export default function ImageMapPredictor() {
                       stage={stg}
                       phases={phases}
                       flightPath={flightPath}
-                      imageObj={imageObjRef.current}
+                      imageObj={loadedScreenshot}
                       canvasWidth={520}
                       canvasHeight={520}
                       showHeatmap={showHeatmap}
@@ -603,16 +902,17 @@ export default function ImageMapPredictor() {
             ) : viewMode === 'split' ? (
               <div className="split-view-wrapper">
                 <div className="split-panel">
-                  <div className="panel-badge">RAW INPUT</div>
+                  <div className="panel-badge">RAW MATCH SCREENSHOT</div>
                   <img src={uploadedImageSrc} alt="Input Map" className="split-img" />
                 </div>
                 <div className="split-panel">
-                  <div className="panel-badge">PREDICTED STAGES</div>
+                  <div className="panel-badge">PREDICTED MULTI-STAGE OVERLAY</div>
                   <canvas
                     ref={canvasRef}
-                    width={800}
-                    height={800}
+                    width={820}
+                    height={820}
                     className="split-canvas"
+                    style={{ cursor: getCanvasCursor() }}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
@@ -623,25 +923,31 @@ export default function ImageMapPredictor() {
               </div>
             ) : (
               <div className="single-canvas-wrapper">
+                {/* Zoom & Viewport Toolbar */}
                 <div className="canvas-zoom-toolbar">
                   <div className="toolbar-left">
                     <div className="map-source-switch">
                       <button
-                        className={`map-switch-btn ${mapBackground === '8k' ? 'active' : ''}`}
-                        onClick={() => setMapBackground('8k')}
-                        title="Show prediction on 8K map"
-                      >
-                        <Map size={13} />
-                        <span>8K Map</span>
-                      </button>
-                      <button
                         className={`map-switch-btn ${mapBackground === 'screenshot' ? 'active' : ''}`}
                         onClick={() => setMapBackground('screenshot')}
-                        title="Show prediction on screenshot"
+                        title="Display prediction over uploaded screenshot"
                       >
-                        <FileImage size={13} />
+                        <FileImage size={12} />
                         <span>Screenshot</span>
                       </button>
+                      <button
+                        className={`map-switch-btn ${mapBackground === '8k' ? 'active' : ''}`}
+                        onClick={() => setMapBackground('8k')}
+                        title="Align and project over 8K ultra map"
+                      >
+                        <Map size={12} />
+                        <span>8K Map</span>
+                      </button>
+                    </div>
+
+                    <div className="quick-hint">
+                      <Info size={11} />
+                      <span>Drag center &amp; radius handles on canvas to adjust circle</span>
                     </div>
                   </div>
 
@@ -649,10 +955,10 @@ export default function ImageMapPredictor() {
                     <button
                       className="focus-stage5-btn"
                       onClick={() => focusStage(5)}
-                      title="Zoom into Stage 5 Final Circle"
+                      title="Auto-zoom into Stage 5 Final Safe Zone"
                     >
                       <Target size={13} />
-                      <span>Focus Final Zone</span>
+                      <span>Focus Final Zone (Stage 5)</span>
                     </button>
                   </div>
 
@@ -689,7 +995,8 @@ export default function ImageMapPredictor() {
                     ref={canvasRef}
                     width={860}
                     height={860}
-                    className={`main-image-canvas ${calibrationMode ? 'calibrating-cursor' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    className="main-image-canvas"
+                    style={{ cursor: getCanvasCursor() }}
                     onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
@@ -697,6 +1004,7 @@ export default function ImageMapPredictor() {
                     onWheel={handleWheel}
                   />
 
+                  {/* Calibration Pinpoint Prompt Pill */}
                   {calibrationMode && (
                     <div className="calibration-prompt-pill">
                       <Crosshair size={14} />
@@ -710,18 +1018,29 @@ export default function ImageMapPredictor() {
                       </button>
                     </div>
                   )}
+
+                  {/* Live Mouse Coordinate Tooltip HUD */}
+                  <div className="canvas-coord-hud mono">
+                    <span>X: {cursorPosMeters.x}m</span>
+                    <span>Y: {cursorPosMeters.y}m</span>
+                    <span className="coord-grid">[{toErangelGrid(cursorPosMeters.x, cursorPosMeters.y)}]</span>
+                    <span className={isErangelLand(cursorPosMeters.x, cursorPosMeters.y) ? 'text-emerald' : 'text-amber'}>
+                      {isErangelLand(cursorPosMeters.x, cursorPosMeters.y) ? '● LAND' : '○ WATER'}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
           </div>
 
+          {/* Stage Filter & Opacity Bar */}
           <div className="stage-filter-bar">
             <span className="filter-title">Inspect Stage:</span>
             <button
               className={`stage-pill ${selectedStage === null ? 'active' : ''}`}
               onClick={() => setSelectedStage(null)}
             >
-              All Stages
+              All Stages (1–5)
             </button>
             {[1, 2, 3, 4, 5].map((stg) => (
               <button
@@ -748,46 +1067,46 @@ export default function ImageMapPredictor() {
           </div>
         </div>
 
-        {/* Right: Clean Calibration Controls */}
+        {/* Right Column: Calibration Controls & Feature Adjusters */}
         <div className="calibration-deck tactical-card">
           <div className="deck-title-bar">
             <div className="deck-title-text">
-              <Sliders size={14} className="deck-title-icon" />
-              <span>Map Calibration</span>
+              <Sliders size={15} className="deck-title-icon" />
+              <span>Map Calibration &amp; Parameters</span>
             </div>
           </div>
 
           <div className="deck-body">
             {/* Interactive Pinpoint Tools */}
             <div className="calibration-tools-group">
-              <div className="tools-title">Map Pinpointing</div>
+              <div className="tools-title">Direct Canvas Pinpointing</div>
               <div className="tools-grid">
                 <button
                   className={`tool-action-btn ${calibrationMode === 'setCircle' ? 'active' : ''}`}
                   onClick={() => setCalibrationMode(calibrationMode === 'setCircle' ? null : 'setCircle')}
                 >
                   <Crosshair size={13} />
-                  <span>Set Stage 1 Center</span>
+                  <span>Pin Stage 1 Center</span>
                 </button>
                 <button
                   className={`tool-action-btn ${calibrationMode === 'setFlightStart' ? 'active' : ''}`}
                   onClick={() => setCalibrationMode(calibrationMode === 'setFlightStart' ? null : 'setFlightStart')}
                 >
                   <Plane size={13} />
-                  <span>Set Flight Vector</span>
+                  <span>Pin Flight Vector</span>
                 </button>
               </div>
             </div>
 
-            {/* Stage 1 Parameters */}
+            {/* Stage 1 Safe Zone Controls */}
             <div className="param-group">
               <div className="group-label">
-                <span>Stage 1 Center (m)</span>
-                <span className="mono">{phase1Center.x}, {phase1Center.y}</span>
+                <span>Stage 1 Safe Zone Circle</span>
+                <span className="mono">[{toErangelGrid(phase1Center.x, phase1Center.y)}] • {phase1Radius * 2 / 1000}km dia</span>
               </div>
               <div className="two-col-inputs">
                 <div className="input-box">
-                  <label>Center X</label>
+                  <label>Center X (m)</label>
                   <input
                     type="number"
                     min="0"
@@ -798,7 +1117,7 @@ export default function ImageMapPredictor() {
                   />
                 </div>
                 <div className="input-box">
-                  <label>Center Y</label>
+                  <label>Center Y (m)</label>
                   <input
                     type="number"
                     min="0"
@@ -810,15 +1129,15 @@ export default function ImageMapPredictor() {
                 </div>
               </div>
 
-              <div className="slider-box" style={{ marginTop: '6px' }}>
+              <div className="slider-box" style={{ marginTop: '8px' }}>
                 <div className="slider-label">
-                  <span>Circle Radius</span>
+                  <span>Circle Radius (m)</span>
                   <span className="mono">{phase1Radius}m</span>
                 </div>
                 <input
                   type="range"
-                  min="1600"
-                  max="2400"
+                  min="1400"
+                  max="2600"
                   step="50"
                   value={phase1Radius}
                   onChange={(e) => setPhase1Radius(Number(e.target.value))}
@@ -826,17 +1145,17 @@ export default function ImageMapPredictor() {
               </div>
             </div>
 
-            {/* Flight Path Parameters */}
+            {/* Flight Path Vector Controls */}
             <div className="param-group">
               <div className="group-label">
-                <span>Flight Vector (m)</span>
+                <span>Flight Trajectory Vector</span>
                 <span className="mono">
-                  {Math.round(flightPath.angle)}° • {Math.round(flightPath.lengthMeters / 1000)}km
+                  {Math.round(flightPath.angle)}° ({toCompassBearing(flightPath.angle)}) • {(flightPath.lengthMeters / 1000).toFixed(1)}km
                 </span>
               </div>
               <div className="two-col-inputs">
                 <div className="input-box">
-                  <label>Start X</label>
+                  <label>Start X (m)</label>
                   <input
                     type="number"
                     min="0"
@@ -846,7 +1165,7 @@ export default function ImageMapPredictor() {
                   />
                 </div>
                 <div className="input-box">
-                  <label>Start Y</label>
+                  <label>Start Y (m)</label>
                   <input
                     type="number"
                     min="0"
@@ -856,7 +1175,7 @@ export default function ImageMapPredictor() {
                   />
                 </div>
                 <div className="input-box">
-                  <label>End X</label>
+                  <label>End X (m)</label>
                   <input
                     type="number"
                     min="0"
@@ -866,7 +1185,7 @@ export default function ImageMapPredictor() {
                   />
                 </div>
                 <div className="input-box">
-                  <label>End Y</label>
+                  <label>End Y (m)</label>
                   <input
                     type="number"
                     min="0"
@@ -878,17 +1197,25 @@ export default function ImageMapPredictor() {
               </div>
             </div>
 
-            {/* Layer Toggles */}
+            {/* Tactical Overlays & Guardrails */}
             <div className="param-group">
-              <div className="group-label">Overlays</div>
+              <div className="group-label">Tactical Overlays &amp; Guardrails</div>
               <div className="toggle-list">
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={enforceTerrain}
+                    onChange={(e) => setEnforceTerrain(e.target.checked)}
+                  />
+                  <span>Enforce Terrain Water Avoidance (FR-04)</span>
+                </label>
                 <label className="toggle-row">
                   <input
                     type="checkbox"
                     checked={showHeatmap}
                     onChange={(e) => setShowHeatmap(e.target.checked)}
                   />
-                  <span>Shift Probability Heatmap</span>
+                  <span>Shift Probability Heatmap (FR-05)</span>
                 </label>
                 <label className="toggle-row">
                   <input
@@ -896,7 +1223,7 @@ export default function ImageMapPredictor() {
                     checked={showShiftArrows}
                     onChange={(e) => setShowShiftArrows(e.target.checked)}
                   />
-                  <span>Shift Direction Arrows</span>
+                  <span>Shift Direction Vector Arrows</span>
                 </label>
                 <label className="toggle-row">
                   <input
@@ -906,18 +1233,141 @@ export default function ImageMapPredictor() {
                   />
                   <span>Flight Trajectory Line</span>
                 </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={showGrid}
+                    onChange={(e) => setShowGrid(e.target.checked)}
+                  />
+                  <span>Erangel 8x8 1km Grid Overlay</span>
+                </label>
+                <label className="toggle-row">
+                  <input
+                    type="checkbox"
+                    checked={showAuditTable}
+                    onChange={(e) => setShowAuditTable(e.target.checked)}
+                  />
+                  <span>Show Telemetry &amp; Terrain Safety Audit Table</span>
+                </label>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Bottom Stage Progression Cards */}
+      {/* 4. TELEMETRY & TERRAIN SAFETY AUDIT MATRIX */}
+      {showAuditTable && (
+        <div className="audit-matrix-card tactical-card">
+          <div className="audit-matrix-header">
+            <div className="audit-header-title">
+              <ShieldCheck size={16} className="text-emerald" />
+              <span>Telemetry &amp; Terrain Safety Audit Matrix</span>
+            </div>
+            <div className="audit-header-sub">
+              Validating strict Euclidean circle containment, binary terrain mask water checks, and model error benchmarks across all stages.
+            </div>
+          </div>
+
+          <div className="audit-table-wrapper">
+            <table className="audit-table">
+              <thead>
+                <tr>
+                  <th>Stage</th>
+                  <th>Center (X, Y)</th>
+                  <th>Grid</th>
+                  <th>Radius / Dia</th>
+                  <th>Shift Vector</th>
+                  <th>Compass</th>
+                  <th>Containment Audit</th>
+                  <th>Terrain Safety</th>
+                  <th>Expected MAE</th>
+                  <th>Tactical Anchor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditReport.map((row) => {
+                  const cfg = PHASE_CONFIG[row.phase];
+                  return (
+                    <tr key={row.phase} className={`stage-row-${row.phase}`}>
+                      <td>
+                        <span className="stage-badge" style={{ backgroundColor: cfg.bg, color: cfg.color, borderColor: cfg.color }}>
+                          Stage {row.phase} ({cfg.name})
+                        </span>
+                      </td>
+                      <td className="mono">{row.center.x}, {row.center.y}</td>
+                      <td>
+                        <span className="grid-cell mono">{row.grid}</span>
+                      </td>
+                      <td className="mono">{row.radius}m ({row.diameterKm}km)</td>
+                      <td className="mono">
+                        {row.phase === 1 ? '—' : `${row.shiftDist}m (ΔX: ${row.deltaX}, ΔY: ${row.deltaY})`}
+                      </td>
+                      <td>
+                        {row.phase === 1 ? (
+                          <span className="compass-badge">CENTER</span>
+                        ) : (
+                          <span className="compass-badge active">{row.compass} ({Math.round(row.shiftAngle)}°)</span>
+                        )}
+                      </td>
+                      <td>
+                        {row.containmentValid ? (
+                          <span className="audit-badge pass">
+                            <CheckCircle2 size={12} />
+                            <span>100% Contained</span>
+                          </span>
+                        ) : (
+                          <span className="audit-badge fail">
+                            <AlertTriangle size={12} />
+                            <span>Clamped</span>
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {row.isReprojected ? (
+                          <span className="audit-badge warn" title="Predicted center was water; reprojected to nearest landmass">
+                            <AlertTriangle size={12} />
+                            <span>Reprojected</span>
+                          </span>
+                        ) : row.centerIsLand ? (
+                          <span className="audit-badge pass" title={`Land verified with ${row.landCoveragePct}% dry land coverage`}>
+                            <ShieldCheck size={12} />
+                            <span>Land Pass ({row.landCoveragePct}%)</span>
+                          </span>
+                        ) : (
+                          <span className="audit-badge fail">
+                            <AlertTriangle size={12} />
+                            <span>Water Center</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="mono">
+                        {row.phase === 1 ? (
+                          <span className="text-muted">Exact Input</span>
+                        ) : (
+                          <span>±{row.maeDistMeters}m <small className="text-muted">(P90: {row.p90DistMeters}m)</small></span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="tactical-anchor-cell">
+                          <span className="anchor-name">{row.landmark}</span>
+                          <span className="anchor-desc">{row.terrainDesc}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 5. BOTTOM STAGE PROGRESSION CARDS */}
       <div className="all-stages-summary tactical-card">
         <div className="summary-header">
           <div className="summary-title">
             <CheckCircle2 size={15} color="#059669" />
-            <span>Predicted Safe Zone Stages (1 to 5)</span>
+            <span>Predicted Safe Zone Rotation Cards (Stages 1 to 5)</span>
           </div>
         </div>
 

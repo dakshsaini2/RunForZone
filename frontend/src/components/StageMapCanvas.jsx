@@ -1,9 +1,8 @@
 import React, { useRef, useEffect } from 'react';
-import { Download, Maximize2, ShieldCheck, MapPin } from 'lucide-react';
+import { Download, Maximize2 } from 'lucide-react';
 import { 
   MAP_EXTENT_METERS, 
-  PHASE_CONFIG, 
-  toErangelGrid 
+  PHASE_CONFIG 
 } from '../utils/engine';
 
 export default function StageMapCanvas({
@@ -13,7 +12,7 @@ export default function StageMapCanvas({
   imageObj,
   canvasWidth = 460,
   canvasHeight = 460,
-  showHeatmap = true,
+  showHeatmap: _showHeatmap = true,
   onOpenFull = null
 }) {
   const canvasRef = useRef(null);
