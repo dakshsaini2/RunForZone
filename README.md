@@ -463,34 +463,7 @@ All rendered assets are exported to [`outputs/`](./outputs/):
 | `erangel_mask_preview.png` | Binary terrain mask verification preview |
 | `cli_prediction.png` | Output from CLI `predict` command |
 
----
 
-## 🛡️ Functional Requirements Checklist
-
-```mermaid
-graph LR
-    FR01["FR-01\nData Ingestion\nFlight vectors and\nPhase 1 zones\nfrom telemetry\nPASSED"]
-    FR02["FR-02\nML Engine\nXGBoost polar\ndistance and angle\nregression\nPASSED"]
-    FR03["FR-03\nContainment\nStrict radius scaling\nCn+1 inside Cn\nPASSED"]
-    FR04["FR-04\nTerrain Mask\nOpenCV binary filter\nwater to land\nPASSED"]
-    FR05["FR-05\nVisualization\n2D probability heatmap\nmulti-phase overlays\nPASSED"]
-    SLA["SLA\nPerformance\n12 ms inference\ntarget lt 500 ms\nPASSED"]
-
-    PASS["ALL REQUIREMENTS\nPASSED"]
-
-    FR01 & FR02 & FR03 & FR04 & FR05 & SLA --> PASS
-```
-
-| Requirement | Module | Description | Status |
-| :---: | :--- | :--- | :---: |
-| **FR-01** | Data Ingestion | Parse flight vectors & Phase 1 safe zones from telemetry/inputs | ✅ PASSED |
-| **FR-02** | ML Engine | XGBoost polar distance & angle regression per phase | ✅ PASSED |
-| **FR-03** | Containment | Strict radius scaling where $C_{n+1} \subseteq C_n$ | ✅ PASSED |
-| **FR-04** | Terrain Mask | OpenCV binary filter re-projects water centers to valid land | ✅ PASSED |
-| **FR-05** | Visualization | 2D probability density heatmap & multi-phase vector overlay | ✅ PASSED |
-| **SLA** | Performance | Single-phase inference **~12 ms** (Target: < 500 ms) | ✅ PASSED |
-
----
 
 ## 📄 License & Attribution
 
@@ -718,18 +691,7 @@ Rendered visual assets are exported directly to [`outputs/`](file:///d:/MapPr/ou
 
 ---
 
-## 🛡️ Functional Requirements Verification Checklist
 
-| Requirement | Module | Description | Benchmark / Status |
-| :--- | :--- | :--- | :---: |
-| **FR-01** | Data Ingestion | Parse flight vectors & Phase 1 safe zones from telemetry/inputs | **PASSED** |
-| **FR-02** | ML Engine | XGBoost polar distance & angle regression | **PASSED** |
-| **FR-03** | Containment | Strict radius scaling where $C_{n+1} \subseteq C_n$ | **PASSED** |
-| **FR-04** | Terrain Mask | OpenCV binary filter re-projects water centers to valid land | **PASSED** |
-| **FR-05** | Visualization | 2D probability density heatmap and multi-phase vector overlay | **PASSED** |
-| **SLA** | Performance | Single-phase inference completes in **~12 ms** (Target: $< 500\text{ ms}$) | **PASSED** |
-
----
 
 ## 📄 License & Attribution
 
